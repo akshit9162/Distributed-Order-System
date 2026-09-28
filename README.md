@@ -1,6 +1,6 @@
 # Distributed Order Processing System
 
-**[Explore the interactive architecture walkthrough](https://harsh-kokcha.github.io/Distributed-Order-System/)** — every stage explained with a diagram, including the animated SAGA state machine, the Kafka fan-out sequence, and the concurrency test's actual verified result.
+**[Explore the interactive architecture walkthrough](https://akshit9162.github.io/Distributed-Order-System/)** — every stage explained with a diagram, including the animated SAGA state machine, the Kafka fan-out sequence, and the concurrency test's actual verified result.
 
 A microservices-based order processing pipeline implementing the SAGA pattern for distributed transactions, with concurrency-safety guarantees under load. Built to mirror how systems like e-commerce checkout or payment processing work in practice: independent services that must stay consistent without a single database transaction spanning all of them.
 
@@ -126,3 +126,7 @@ curl localhost:8081/orders/{id}
 ## Tech stack
 
 Java 17, Spring Boot 3.3, Spring Kafka, Spring Data JPA, PostgreSQL, Redis, Docker + Docker Compose, JUnit 5, AWS EC2.
+
+## Contributors
+
+Team project by **Harsh Kokcha** and **Akshit Gupta**.

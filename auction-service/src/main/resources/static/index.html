@@ -46,6 +46,11 @@
       <span class="value" id="price"></span>
       <span class="meta" id="meta"></span>
     </div>
+    <div class="tracker" id="tracker" hidden>
+      <h3>Order for the winner</h3>
+      <ol class="steps" id="steps"></ol>
+      <p class="tracker-note" id="tracker-note" role="status" aria-live="polite"></p>
+    </div>
     <form id="bid" class="bidform">
       <label>Your maximum bid
         <input name="maxAmount" type="number" min="0.01" step="0.01" required inputmode="decimal">
@@ -53,7 +58,7 @@
       <button type="submit" id="bidbtn">Place bid</button>
     </form>
     <p class="hint" id="hint"></p>
-    <p class="explain">Enter the most you would pay. Like eBay, the system bids for you only as much as needed to keep you ahead, one increment at a time. Your maximum stays private.</p>
+    <p class="explain">Enter the most you would pay. The system bids for you only as much as needed to keep you ahead, one increment at a time. Your maximum stays private.</p>
     <h3>Bid history</h3>
     <table>
       <thead><tr><th>#</th><th>Bidder</th><th>Price after</th><th>Result</th></tr></thead>

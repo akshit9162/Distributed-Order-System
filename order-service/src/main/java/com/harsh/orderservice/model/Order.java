@@ -15,6 +15,14 @@ public class Order {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    // Optimistic locking. Different saga events for one order (inventory-*, payment-*) arrive on different
+    // listener threads and can be processed at the same moment. Without a version check the slower transaction
+    // silently overwrites the faster one (seen end to end: a COMPLETED order reverted to INVENTORY_RESERVED).
+    // With it, the second commit fails, the Kafka error handler retries the event, and the retry sees the
+    // current status and ignores itself if it is stale.
+    @Version
+    private Long version;
+
     // Client-supplied key. If the same key arrives twice (e.g. client retried
     // after a timeout without knowing if the first request succeeded), we
     // return the existing order instead of creating a duplicate. This is the
@@ -66,8 +74,16 @@ public class Order {
     // system fed by at-least-once Kafka delivery - it's a no-op when the
     // requested status is already the current one, so a redelivered event
     // for a step that already ran doesn't fail or re-run side effects.
+    //
+    // PENDING may also jump straight to COMPLETED or ROLLING_BACK. Kafka keeps order only within a partition, and
+    // inventory-reserved and payment-* are different topics consumed on different threads, so a fast payment
+    // result can arrive before the InventoryReservedEvent that caused it. payment-service only charges after
+    // inventory was reserved, so a payment result already proves the reservation happened. Rejecting it here
+    // would drop the event and leave the order stuck in INVENTORY_RESERVED forever; the late
+    // InventoryReservedEvent is then ignored as stale instead.
     private static final Map<OrderStatus, Set<OrderStatus>> ALLOWED_TRANSITIONS = Map.of(
-            OrderStatus.PENDING, Set.of(OrderStatus.INVENTORY_RESERVED, OrderStatus.INVENTORY_REJECTED),
+            OrderStatus.PENDING, Set.of(OrderStatus.INVENTORY_RESERVED, OrderStatus.INVENTORY_REJECTED,
+                    OrderStatus.COMPLETED, OrderStatus.ROLLING_BACK),
             OrderStatus.INVENTORY_RESERVED, Set.of(OrderStatus.COMPLETED, OrderStatus.ROLLING_BACK),
             OrderStatus.ROLLING_BACK, Set.of(OrderStatus.ROLLED_BACK)
     );

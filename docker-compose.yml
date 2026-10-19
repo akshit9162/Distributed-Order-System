@@ -1,4 +1,3 @@
-version: "3.8"
 
 services:
   zookeeper:
@@ -10,6 +9,7 @@ services:
       - "2181:2181"
 
   kafka:
+    restart: on-failure   # depends_on waits for start, not readiness; retry until dependencies answer
     image: confluentinc/cp-kafka:7.6.0
     depends_on:
       - zookeeper
@@ -29,6 +29,26 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # Auto-created topics get the same 3 partitions the services declare. Otherwise a consumer that starts
+      # first sees a 1-partition topic, misses the 2 partitions added a moment later, and only notices them
+      # at its next metadata refresh (5 minutes by default), stalling the SAGA for that long.
+      KAFKA_NUM_PARTITIONS: 3
+
+  # Creates every topic (3 partitions) before any service starts. Without this, a service that subscribes to a
+  # topic that doesn't exist yet is assigned nothing until its next metadata refresh, and the SAGA stalls for
+  # minutes on a fresh start.
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.0
+    depends_on:
+      - kafka
+    restart: on-failure
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        cub kafka-ready -b kafka:29092 1 120 &&
+        for t in order-created order-rolled-back inventory-reserved inventory-rejected payment-confirmed payment-rejected auction-won; do
+          kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic $$t --partitions 3 --replication-factor 1
+        done
 
   postgres:
     image: postgres:16
@@ -48,11 +68,15 @@ services:
       - "6379:6379"
 
   order-service:
+    restart: on-failure   # depends_on waits for start, not readiness; retry until dependencies answer
     build: ./order-service
     depends_on:
-      - kafka
-      - postgres
-      - redis
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+      kafka-init:
+        condition: service_completed_successfully
     ports:
       - "8081:8081"
     environment:
@@ -61,11 +85,15 @@ services:
       SPRING_DATA_REDIS_HOST: redis
 
   inventory-service:
+    restart: on-failure   # depends_on waits for start, not readiness; retry until dependencies answer
     build: ./inventory-service
     depends_on:
-      - kafka
-      - postgres
-      - redis
+      postgres:
+        condition: service_started
+      redis:
+        condition: service_started
+      kafka-init:
+        condition: service_completed_successfully
     ports:
       - "8082:8082"
     environment:
@@ -74,10 +102,13 @@ services:
       SPRING_DATA_REDIS_HOST: redis
 
   payment-service:
+    restart: on-failure   # depends_on waits for start, not readiness; retry until dependencies answer
     build: ./payment-service
     depends_on:
-      - kafka
-      - postgres
+      postgres:
+        condition: service_started
+      kafka-init:
+        condition: service_completed_successfully
     ports:
       - "8083:8083"
     environment:
@@ -85,15 +116,21 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
 
   auction-service:
+    restart: on-failure   # depends_on waits for start, not readiness; retry until dependencies answer
     build: ./auction-service
     depends_on:
-      - kafka
-      - postgres
+      postgres:
+        condition: service_started
+      order-service:
+        condition: service_started
+      kafka-init:
+        condition: service_completed_successfully
     ports:
       - "8084:8084"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/auctiondb
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      ORDER_SERVICE_URL: http://order-service:8081
       TZ: UTC
 
 volumes:

@@ -10,6 +10,7 @@ localStorage.setItem('bidder', me.value);
 let current = null;        // auction being viewed
 let stream = null;         // its EventSource
 let lastLeader = null;     // to notice "you've been outbid"
+let trackTimer = null;     // polls the winner's order
 
 async function json(path, options) {
   const r = await fetch(path, options);
@@ -45,6 +46,7 @@ async function loadList() {
 
 function open(id) {
   if (stream) stream.close();
+  stopTracking();
   lastLeader = null;
   $('placeholder').hidden = true;
   $('detail').hidden = false;
@@ -52,6 +54,10 @@ function open(id) {
   $('hint').textContent = '';
   // Live updates: the server pushes the auction's public state after every accepted bid and when it closes.
   // EventSource reconnects by itself if the connection drops.
+  current = null;
+  $('bidbtn').disabled = true;            // enabled once the auction has loaded
+  // Load it now rather than waiting for the first pushed update, so a quick bid never runs without it.
+  json(`/auctions/${id}`).then(({ ok, body }) => { if (ok && (!current || current.id !== id)) render(body); });
   stream = new EventSource(`/auctions/${id}/stream`);
   stream.addEventListener('auction', (e) => render(JSON.parse(e.data)));
   loadHistory(id);
@@ -63,6 +69,7 @@ function render(a) {
   if (leaderChanged && lastLeader === me_ && a.status === 'OPEN') banner('lose', `You've been outbid. The price is now ${money(a.currentPrice)}.`);
   lastLeader = a.leaderId;
   current = a;
+  $('bidbtn').disabled = false;
 
   $('title').textContent = a.title;
   $('sub').textContent = `Item ${a.productId} · sold by ${a.sellerId} · started at ${money(a.startPrice)}`;
@@ -79,17 +86,87 @@ function render(a) {
     if (!input.value || Number(input.value) < a.minimumNextBid) input.placeholder = `${a.minimumNextBid} or more`;
     $('hint').classList.remove('err');
     $('hint').textContent = a.leaderId === me_ ? 'You are winning. You can raise your maximum without raising the price.' : `Minimum bid: ${money(a.minimumNextBid)}`;
+    stopTracking();
   } else if (a.status === 'SOLD') {
+    startTracking(a);
     banner(a.leaderId === me_ ? 'win' : 'info', a.leaderId === me_
-      ? `You won at ${money(a.currentPrice)}. Your order has been sent for payment.`
+      ? `You won at ${money(a.currentPrice)}. Follow your order below.`
       : `Sold to ${a.leaderId} for ${money(a.currentPrice)}.`);
     $('hint').textContent = '';
   } else {
+    stopTracking();
     banner('info', 'Ended with no bids.');
     $('hint').textContent = '';
   }
   loadHistory(a.id);
   loadList();
+}
+
+// ---- Order tracker -----------------------------------------------------------------------------------------------
+// The winner's purchase runs the order SAGA in other services: order created -> inventory reserved -> payment
+// -> completed, or compensated if a step fails. auction-service relays its status; we poll until it settles.
+const STEPS = ['Won at auction', 'Order created', 'Stock reserved', 'Payment taken', 'Completed'];
+const FINAL = new Set(['COMPLETED', 'INVENTORY_REJECTED', 'ROLLED_BACK']);
+
+function startTracking(a) {
+  $('tracker').hidden = false;
+  if (trackTimer) return;
+  const poll = async () => {
+    const { ok, body } = await json(`/auctions/${a.id}/order`);
+    if (!ok) return;
+    drawTracker(a, body);
+    if (body.state === 'FOUND' && FINAL.has(body.orderStatus)) stopTracking(false);
+  };
+  poll();
+  trackTimer = setInterval(poll, 1000);
+}
+
+function stopTracking(hide = true) {
+  clearInterval(trackTimer);
+  trackTimer = null;
+  if (hide) $('tracker').hidden = true;
+}
+
+function drawTracker(a, t) {
+  // states per step: done | active | failed | (blank = not reached)
+  let marks = ['done', 'active', '', '', ''];
+  let note = '';
+  if (t.state === 'ORDER_SERVICE_UNAVAILABLE') {
+    note = 'Order service not reachable (running the auction service on its own). The win is saved and will be sent when it is.';
+  } else if (t.state === 'NOT_CREATED_YET') {
+    note = 'Win sent to the order service through Kafka. Waiting for the order…';
+  } else {
+    const s = t.orderStatus;
+    marks = {
+      PENDING: ['done', 'done', 'active', '', ''],
+      INVENTORY_RESERVED: ['done', 'done', 'done', 'active', ''],
+      PAYMENT_CONFIRMED: ['done', 'done', 'done', 'done', 'active'],
+      COMPLETED: ['done', 'done', 'done', 'done', 'done'],
+      INVENTORY_REJECTED: ['done', 'done', 'failed', '', ''],
+      PAYMENT_REJECTED: ['done', 'done', 'done', 'failed', ''],
+      ROLLING_BACK: ['done', 'done', 'done', 'failed', ''],
+      ROLLED_BACK: ['done', 'done', 'done', 'failed', ''],
+    }[s] || marks;
+    note = {
+      PENDING: 'Order created. Reserving stock…',
+      INVENTORY_RESERVED: 'Stock reserved. Taking payment…',
+      PAYMENT_CONFIRMED: 'Payment taken. Finishing…',
+      COMPLETED: `Done: order ${String(t.orderId).slice(0, 8)} completed for ${a.leaderId} at ${money(a.currentPrice)}.`,
+      INVENTORY_REJECTED: 'Out of stock: the order was rejected before any payment.',
+      PAYMENT_REJECTED: 'Payment failed. Releasing the reserved stock…',
+      ROLLING_BACK: 'Payment failed. Releasing the reserved stock…',
+      ROLLED_BACK: 'Payment failed, so the reserved stock was released (compensating transaction).',
+    }[s] || s;
+  }
+  const ol = $('steps');
+  ol.replaceChildren();
+  STEPS.forEach((label, i) => {
+    const li = document.createElement('li');
+    li.textContent = label;
+    if (marks[i]) li.className = marks[i];
+    ol.append(li);
+  });
+  $('tracker-note').textContent = note;
 }
 
 function banner(kind, text) {
@@ -127,6 +204,7 @@ function tick() {
 
 $('bid').addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (!current) return;                   // auction not loaded yet
   const btn = $('bidbtn');
   btn.disabled = true;
   const maxAmount = Number(e.target.elements.maxAmount.value);

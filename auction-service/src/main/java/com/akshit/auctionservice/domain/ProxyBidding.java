@@ -3,7 +3,7 @@ package com.akshit.auctionservice.domain;
 import java.math.BigDecimal;
 
 /**
- * eBay-style proxy bidding, as a pure function: (auction state, new maximum bid) -> (new state, outcome).
+ * Second-price proxy bidding, as a pure function: (auction state, new maximum bid) -> (new state, outcome).
  *
  * A bidder enters the most they are willing to pay. The system bids on their behalf, only as much as needed:
  * the leader pays one increment above the second-highest maximum (never more than their own maximum).

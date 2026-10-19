@@ -1,5 +1,6 @@
 package com.akshit.auctionservice;
 
+import com.akshit.auctionservice.client.OrderTrackingClient;
 import com.akshit.auctionservice.dto.Dtos.CreateAuctionRequest;
 import com.akshit.auctionservice.events.AuctionWonEvent;
 import com.akshit.auctionservice.kafka.AuctionEventProducer;
@@ -40,6 +41,7 @@ class AuctionLifecycleTest {
     @Autowired private BidRepository bids;
     @Autowired private AuctionCloser closer;
     @MockBean private AuctionEventProducer producer;
+    @MockBean private OrderTrackingClient orders;
 
     @BeforeEach
     void reset() {
@@ -146,6 +148,23 @@ class AuctionLifecycleTest {
         assertEquals(1, closer.publishPendingWins());   // next run: delivered
         assertTrue(auctions.findById(id).orElseThrow().isWonEventPublished());
         verify(producer, times(2)).publishWon(any());
+    }
+
+    @Test
+    void sold_auction_reports_the_winners_order_status() throws Exception {
+        UUID id = create("10.00", 3600);
+        http.perform(get("/auctions/{id}/order", id)).andExpect(status().isConflict());   // not sold yet
+        http.perform(post("/auctions/{id}/bids", id).contentType(MediaType.APPLICATION_JSON).content(bidJson("a", "alice", "20.00")));
+        endNow(id);
+        closer.closeDueAuctions();
+        UUID orderId = UUID.randomUUID();
+        when(orders.track(id)).thenReturn(new OrderTrackingClient.Tracking(
+                OrderTrackingClient.State.FOUND, orderId, "INVENTORY_RESERVED", Instant.now()));
+
+        http.perform(get("/auctions/{id}/order", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("FOUND"))
+                .andExpect(jsonPath("$.orderStatus").value("INVENTORY_RESERVED"));
     }
 
     /** Moves the end time into the past (the API only allows future end times). */

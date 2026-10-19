@@ -31,6 +31,8 @@ spring:
 auction:
   close-interval-ms: 1000
 
+order-service-url: ${ORDER_SERVICE_URL:http://localhost:8081}   # where winners' orders are tracked
+
 logging:
   level:
     com.akshit: INFO

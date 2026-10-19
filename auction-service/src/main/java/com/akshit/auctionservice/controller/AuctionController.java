@@ -1,6 +1,8 @@
 package com.akshit.auctionservice.controller;
 
+import com.akshit.auctionservice.client.OrderTrackingClient;
 import com.akshit.auctionservice.dto.Dtos.*;
+import com.akshit.auctionservice.model.AuctionStatus;
 import com.akshit.auctionservice.service.AuctionService;
 import com.akshit.auctionservice.service.AuctionUpdates;
 import com.akshit.auctionservice.service.BiddingService;
@@ -20,11 +22,14 @@ public class AuctionController {
     private final AuctionService auctionService;
     private final BiddingService biddingService;
     private final AuctionUpdates updates;
+    private final OrderTrackingClient orders;
 
-    public AuctionController(AuctionService auctionService, BiddingService biddingService, AuctionUpdates updates) {
+    public AuctionController(AuctionService auctionService, BiddingService biddingService, AuctionUpdates updates,
+                             OrderTrackingClient orders) {
         this.auctionService = auctionService;
         this.biddingService = biddingService;
         this.updates = updates;
+        this.orders = orders;
     }
 
     @PostMapping
@@ -67,5 +72,12 @@ public class AuctionController {
     public SseEmitter stream(@PathVariable UUID id) {
         auctionService.get(id);
         return updates.watch(id);
+    }
+
+    /** The winner's order as it moves through the SAGA (inventory -> payment -> completed, or compensated). */
+    @GetMapping("/{id}/order")
+    public ResponseEntity<OrderTrackingClient.Tracking> order(@PathVariable UUID id) {
+        if (auctionService.get(id).getStatus() != AuctionStatus.SOLD) return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        return ResponseEntity.ok(orders.track(id));
     }
 }

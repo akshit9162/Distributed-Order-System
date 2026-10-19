@@ -85,7 +85,7 @@ mvn test -Dtest=InventoryConcurrencyTest
 
 Fires 50 concurrent reservation attempts at a product with 10 units of stock, asserting exactly 10 succeed and 40 are correctly rejected — proving the lock prevents overselling under real concurrent load. Verified result: `50 concurrent requests for 10 units of stock -> 10 reserved, 40 rejected, in 2801 ms`.
 
-## Auction service: eBay-style proxy bidding
+## Auction service: proxy bidding
 
 `auction-service` (port 8084) adds the other way to buy on a marketplace: an auction. When it ends, the winner's
 purchase enters the same SAGA as any other order, so inventory and payment work exactly as above.
@@ -102,8 +102,8 @@ purchase enters the same SAGA as any other order, so inventory and payment work 
 
 ![Auction page](docs/img/auction-service.png)
 
-**Proxy bidding (eBay's rules).** A bidder enters the most they would pay; the system bids for them only as much
-as needed. The leader pays one increment above the second-highest maximum (eBay's increment table: $0.05 under $1
+**Proxy bidding (second-price).** A bidder enters the most they would pay; the system bids for them only as much
+as needed. The leader pays one increment above the second-highest maximum (a standard increment table: $0.05 under $1
 up to $100 above $5,000), never more than their own maximum. Ties go to the earlier bid, the leader can raise their
 maximum without raising the price, sellers cannot bid on their own items, and maximums are never exposed by the
 API. The rules are a pure function (`ProxyBidding`), so they are unit-tested scenario by scenario and can be
@@ -124,11 +124,30 @@ Kafka acknowledges it (a small transactional outbox). Delivery is therefore at l
 `auction-{id}` as the order's idempotency key, so a redelivered event never creates a second order.
 
 **Live page.** `http://localhost:8084/` lists auctions, starts new ones, and shows one live over Server-Sent
-Events: price, leader, countdown, "you've been outbid", bid history. Plain JavaScript.
+Events: price, leader, countdown, "you've been outbid", bid history. When an auction sells, an **order tracker**
+follows the winner's order through the SAGA (order created → stock reserved → payment taken → completed, or the
+failure and compensation steps). The page only talks to auction-service, which looks the order up in
+order-service by its key (`GET /orders/by-key/auction-{id}`) server to server. Plain JavaScript.
 
-**Tests.** 29 in auction-service (rules, increments, concurrency, idempotent retries, HTTP outcomes, closing, the
-outbox retrying while Kafka is down) and 3 in order-service (auction win → pending order → SAGA, redelivery,
-duplicate-key race). Run with `mvn test` in each folder; no Docker needed.
+**End to end** (`scripts/e2e-auctions.sh`, with `docker compose up -d`): Alice (balance 500) wins one auction and her
+order reaches COMPLETED, paying the second price; Bob (balance 10) wins another at 20, payment is rejected and his
+reserved stock is released (ROLLED_BACK). Running this for the first time on the full stack found five problems,
+all fixed:
+
+| Found | Why | Fix |
+|---|---|---|
+| Images would not build on Apple Silicon | `eclipse-temurin:17-jre-alpine` has no ARM build | `eclipse-temurin:17-jre` (multi-arch) |
+| No service databases existed | `init-multiple-dbs.sh` was not executable, so Postgres skipped it | executable bit recorded in git |
+| SAGA stalled for ~5 minutes | consumers started before topics had 3 partitions and only saw 1 until the next metadata refresh | a `kafka-init` container creates every topic with 3 partitions before any service starts |
+| Orders stuck in INVENTORY_RESERVED | a fast payment result can arrive before the inventory event (different topics, no cross-topic order) and was dropped as "out of order" | PENDING may go straight to COMPLETED / ROLLING_BACK; the late event is ignored as stale |
+| A COMPLETED order reverted to INVENTORY_RESERVED | two listener threads updated the same order at once; the slower write overwrote the faster (no version check) | `@Version` on `Order`; the loser fails and Kafka retries it |
+
+Plus a startup race (Kafka timing out waiting for Zookeeper), fixed with `restart: on-failure`, and a page race where
+bidding right after opening an auction, before it had loaded, threw an error (the bid button now waits for the auction).
+
+**Tests.** 30 in auction-service (rules, increments, concurrency, idempotent retries, HTTP outcomes, closing, the
+outbox retrying while Kafka is down) and 11 in order-service (auction win → pending order → SAGA, redelivery,
+duplicate-key race, lookup by key, out-of-order saga events, concurrent order updates). Run with `mvn test` in each folder; no Docker needed.
 
 ## AWS deployment
 

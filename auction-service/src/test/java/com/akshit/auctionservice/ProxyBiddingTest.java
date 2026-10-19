@@ -105,7 +105,7 @@ class ProxyBiddingTest {
     @ParameterizedTest
     @CsvSource({"0.50,0.05", "0.99,0.05", "1.00,0.25", "24.99,0.50", "25.00,1.00", "99.99,1.00",
             "100.00,2.50", "999.99,10.00", "1000.00,25.00", "4999.99,50.00", "5000.00,100.00", "250000,100.00"})
-    void increments_follow_the_ebay_table(String price, String increment) {
+    void increments_follow_the_standard_table(String price, String increment) {
         assertEquals($(increment), BidIncrements.at($(price)));
     }
 

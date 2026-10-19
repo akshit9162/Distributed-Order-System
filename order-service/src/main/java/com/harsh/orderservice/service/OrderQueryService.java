@@ -7,6 +7,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -25,5 +26,13 @@ public class OrderQueryService {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("Order not found: " + id));
         return OrderResponse.from(order);
+    }
+
+    /**
+     * Look an order up by its idempotency key, e.g. "auction-{auctionId}" for an auction win. Not cached: the
+     * auction page polls this to show the SAGA progressing, so it must always see the latest status.
+     */
+    public Optional<OrderResponse> findByIdempotencyKey(String idempotencyKey) {
+        return orderRepository.findByIdempotencyKey(idempotencyKey).map(OrderResponse::from);
     }
 }

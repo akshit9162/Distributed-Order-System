@@ -40,4 +40,12 @@ public class OrderController {
         // Postgres on a miss. See CacheConfig for the eviction strategy.
         return ResponseEntity.ok(orderQueryService.getOrder(id));
     }
+
+    /** Find an order by the key it was created with (auction-service uses "auction-{auctionId}"). */
+    @GetMapping("/by-key/{idempotencyKey}")
+    public ResponseEntity<OrderResponse> getOrderByKey(@PathVariable String idempotencyKey) {
+        return orderQueryService.findByIdempotencyKey(idempotencyKey)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
 }

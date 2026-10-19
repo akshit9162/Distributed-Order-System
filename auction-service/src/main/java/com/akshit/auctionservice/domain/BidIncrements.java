@@ -3,7 +3,7 @@ package com.akshit.auctionservice.domain;
 import java.math.BigDecimal;
 
 /**
- * eBay's bid increment table: the smallest amount a new bid must beat the current price by, which depends on
+ * The standard online-auction bid increment table: the smallest amount a new bid must beat the current price by, which depends on
  * how high the price already is. The same table is used to work out the price a proxy bid pushes the auction to.
  */
 public final class BidIncrements {

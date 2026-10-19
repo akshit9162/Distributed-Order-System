@@ -85,6 +85,51 @@ mvn test -Dtest=InventoryConcurrencyTest
 
 Fires 50 concurrent reservation attempts at a product with 10 units of stock, asserting exactly 10 succeed and 40 are correctly rejected — proving the lock prevents overselling under real concurrent load. Verified result: `50 concurrent requests for 10 units of stock -> 10 reserved, 40 rejected, in 2801 ms`.
 
+## Auction service: eBay-style proxy bidding
+
+`auction-service` (port 8084) adds the other way to buy on a marketplace: an auction. When it ends, the winner's
+purchase enters the same SAGA as any other order, so inventory and payment work exactly as above.
+
+```
+ POST /auctions/{id}/bids ──▶ auction-service ── auction ends ──▶ Kafka: auction-won ──▶ order-service
+ (bidder's maximum)           proxy bidding                        (outbox, at least once)  creates the order,
+                              optimistic locking                                            key "auction-{id}"
+                              SSE live updates                                                 │
+                                                                                               ▼
+                                                                         inventory reserved → payment → COMPLETED
+                                                                         (or compensated, as with any order)
+```
+
+![Auction page](docs/img/auction-service.png)
+
+**Proxy bidding (eBay's rules).** A bidder enters the most they would pay; the system bids for them only as much
+as needed. The leader pays one increment above the second-highest maximum (eBay's increment table: $0.05 under $1
+up to $100 above $5,000), never more than their own maximum. Ties go to the earlier bid, the leader can raise their
+maximum without raising the price, sellers cannot bid on their own items, and maximums are never exposed by the
+API. The rules are a pure function (`ProxyBidding`), so they are unit-tested scenario by scenario and can be
+replayed exactly.
+
+**Concurrency: optimistic locking with retry.** Every bid reads the auction, applies the rules and writes it back
+through a JPA `@Version` check; if another bid committed first, it backs off for a random few milliseconds and
+retries on fresh data. Inventory uses a Redis lock because many orders share one product's stock; here each
+auction is its own unit of contention, bids are microseconds of work, and nobody holds a lock while a slow
+client stalls. `BiddingConcurrencyTest` fires **1,000 bids from 32 threads at one auction**: hundreds of version
+conflicts are retried (379 in the last run), every accepted bid is recorded exactly once with gap-free sequence
+numbers, and replaying them one by one through the rules reproduces the final price, leader and maximum exactly.
+
+**Ending on time, and handing off safely.** A scheduler closes auctions past their end time through the same
+version check, so a bid placed a moment before the deadline is never lost; bids at or after it are rejected.
+The SOLD status and an "event not yet published" flag commit together, and the `AuctionWonEvent` is re-sent until
+Kafka acknowledges it (a small transactional outbox). Delivery is therefore at least once, and order-service uses
+`auction-{id}` as the order's idempotency key, so a redelivered event never creates a second order.
+
+**Live page.** `http://localhost:8084/` lists auctions, starts new ones, and shows one live over Server-Sent
+Events: price, leader, countdown, "you've been outbid", bid history. Plain JavaScript.
+
+**Tests.** 29 in auction-service (rules, increments, concurrency, idempotent retries, HTTP outcomes, closing, the
+outbox retrying while Kafka is down) and 3 in order-service (auction win → pending order → SAGA, redelivery,
+duplicate-key race). Run with `mvn test` in each folder; no Docker needed.
+
 ## AWS deployment
 
 The full stack has been deployed and verified end-to-end on a single AWS EC2 instance (Ubuntu, t3.medium) running the same `docker-compose.yml` used locally — Kafka, Postgres, Redis, and all three services as containers on one box. An order was placed and confirmed `COMPLETED` from an external client hitting the instance's public IP.
@@ -101,6 +146,7 @@ docker-compose up -d
 cd order-service && mvn spring-boot:run
 cd inventory-service && mvn spring-boot:run
 cd payment-service && mvn spring-boot:run
+cd auction-service && mvn spring-boot:run    # auctions at http://localhost:8084/
 
 # 3. Seed a product and a customer account
 curl -X POST localhost:8082/inventory/seed -H "Content-Type: application/json" \
@@ -121,12 +167,21 @@ curl -X POST localhost:8081/orders -H "Content-Type: application/json" \
 
 # 5. Check the order status - progresses to COMPLETED within a second or two
 curl localhost:8081/orders/{id}
+
+# 6. Or win it at auction: list it, bid, and let it end (the winner's order then runs the same SAGA)
+curl -X POST localhost:8084/auctions -H "Content-Type: application/json" \
+  -d '{"sellerId": "seller-1", "productId": "sku-123", "title": "Camera", "startPrice": 10.00, "durationSeconds": 30}'
+curl -X POST localhost:8084/auctions/{auctionId}/bids -H "Content-Type: application/json" \
+  -d '{"idempotencyKey": "bid-1", "bidderId": "cust-1", "maxAmount": 40.00}'
 ```
+
+The auction service alone also runs without Docker: `cd auction-service && mvn spring-boot:run -Dspring-boot.run.profiles=demo`.
 
 ## Tech stack
 
-Java 17, Spring Boot 3.3, Spring Kafka, Spring Data JPA, PostgreSQL, Redis, Docker + Docker Compose, JUnit 5, AWS EC2.
+Java 17, Spring Boot 3.3, Spring Kafka, Spring Data JPA, PostgreSQL, Redis, Server-Sent Events, JavaScript, Docker + Docker Compose, JUnit 5, GitHub Actions, AWS EC2.
 
 ## Contributors
 
-Team project by **Harsh Kokcha** and **Akshit Gupta**.
+Team project by **Harsh Kokcha** and **Akshit Gupta**. The auction service, the auction → order hand-off and
+the shared `OrderCreationService` were added by Akshit Gupta.

@@ -18,11 +18,13 @@ public class KafkaTopicConfig {
     public static final String INVENTORY_REJECTED_TOPIC = "inventory-rejected";
     public static final String PAYMENT_CONFIRMED_TOPIC = "payment-confirmed";
     public static final String PAYMENT_REJECTED_TOPIC = "payment-rejected";
+    public static final String AUCTION_WON_TOPIC = "auction-won";
 
     @Bean public NewTopic orderCreatedTopic() { return TopicBuilder.name(ORDER_CREATED_TOPIC).partitions(3).replicas(1).build(); }
     @Bean public NewTopic orderRolledBackTopic() { return TopicBuilder.name(ORDER_ROLLED_BACK_TOPIC).partitions(3).replicas(1).build(); }
     @Bean public NewTopic inventoryReservedTopic() { return TopicBuilder.name(INVENTORY_RESERVED_TOPIC).partitions(3).replicas(1).build(); }
     @Bean public NewTopic inventoryRejectedTopic() { return TopicBuilder.name(INVENTORY_REJECTED_TOPIC).partitions(3).replicas(1).build(); }
     @Bean public NewTopic paymentConfirmedTopic() { return TopicBuilder.name(PAYMENT_CONFIRMED_TOPIC).partitions(3).replicas(1).build(); }
+    @Bean public NewTopic auctionWonTopic() { return TopicBuilder.name(AUCTION_WON_TOPIC).partitions(3).replicas(1).build(); }
     @Bean public NewTopic paymentRejectedTopic() { return TopicBuilder.name(PAYMENT_REJECTED_TOPIC).partitions(3).replicas(1).build(); }
 }

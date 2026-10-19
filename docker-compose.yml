@@ -35,7 +35,7 @@ services:
     environment:
       POSTGRES_USER: orderapp
       POSTGRES_PASSWORD: orderapp
-      POSTGRES_MULTIPLE_DATABASES: orderdb,inventorydb,paymentdb
+      POSTGRES_MULTIPLE_DATABASES: orderdb,inventorydb,paymentdb,auctiondb
     ports:
       - "5432:5432"
     volumes:
@@ -83,6 +83,18 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/paymentdb
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
+  auction-service:
+    build: ./auction-service
+    depends_on:
+      - kafka
+      - postgres
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/auctiondb
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      TZ: UTC
 
 volumes:
   pgdata:

@@ -1,5 +1,6 @@
 package com.harsh.orderservice.config;
 
+import com.harsh.orderservice.events.AuctionWonEvent;
 import com.harsh.orderservice.events.InventoryRejectedEvent;
 import com.harsh.orderservice.events.InventoryReservedEvent;
 import com.harsh.orderservice.events.PaymentConfirmedEvent;
@@ -91,5 +92,10 @@ public class KafkaConsumerConfig {
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, PaymentRejectedEvent> paymentRejectedListenerFactory(DefaultErrorHandler errorHandler) {
         return factoryFor(PaymentRejectedEvent.class, errorHandler);
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, AuctionWonEvent> auctionWonListenerFactory(DefaultErrorHandler errorHandler) {
+        return factoryFor(AuctionWonEvent.class, errorHandler);
     }
 }

@@ -1,0 +1,19 @@
+# Run the auction service alone, without Docker: in-memory database, no Kafka broker.
+# Winning bids still close normally; publishing AuctionWonEvent just keeps retrying until a broker exists.
+#   mvn spring-boot:run -Dspring-boot.run.profiles=demo
+spring:
+  datasource:
+    url: jdbc:h2:mem:auctiondemo;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+  kafka:
+    admin:
+      auto-create: false
+    producer:
+      properties:
+        max.block.ms: 1000

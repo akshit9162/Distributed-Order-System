@@ -5,71 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Auctions · Distributed Order System</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%233665f3'/><path d='M30 70 L62 38 M52 28 L72 48' stroke='white' stroke-width='10' stroke-linecap='round'/></svg>">
-<link rel="stylesheet" href="styles.css">
+  <script type="module" crossorigin src="/assets/index-CouhN_Rv.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Dti7V3N5.css">
 </head>
 <body>
-<header>
-  <div class="brand">auction<em>service</em></div>
-  <label class="me">Bidding as <input id="me" autocomplete="nickname" maxlength="40"></label>
-</header>
-
-<main>
-  <section class="col">
-    <div class="panel">
-      <h2>Open auctions</h2>
-      <ul id="list" class="list"><li class="empty">No open auctions. List one below.</li></ul>
-    </div>
-    <div class="panel">
-      <h2>List an item</h2>
-      <form id="create">
-        <label>Title <input name="title" required maxlength="120" value="Vintage film camera"></label>
-        <div class="row">
-          <label>Start price <input name="startPrice" type="number" min="0.01" step="0.01" required value="10.00"></label>
-          <label>Ends in (seconds) <input name="durationSeconds" type="number" min="5" max="604800" required value="120"></label>
-        </div>
-        <button type="submit">Start auction</button>
-      </form>
-    </div>
-  </section>
-
-  <section class="panel detail" id="detail" hidden>
-    <div class="top">
-      <div>
-        <h2 id="title"></h2>
-        <p class="sub" id="sub"></p>
-      </div>
-      <div class="timer" id="timer" aria-live="off"></div>
-    </div>
-    <div class="banner" id="banner" role="status" aria-live="polite" hidden></div>
-    <div class="price">
-      <span class="label">Current price</span>
-      <span class="value" id="price"></span>
-      <span class="meta" id="meta"></span>
-    </div>
-    <div class="tracker" id="tracker" hidden>
-      <h3>Order for the winner</h3>
-      <ol class="steps" id="steps"></ol>
-      <p class="tracker-note" id="tracker-note" role="status" aria-live="polite"></p>
-    </div>
-    <form id="bid" class="bidform">
-      <label>Your maximum bid
-        <input name="maxAmount" type="number" min="0.01" step="0.01" required inputmode="decimal">
-      </label>
-      <button type="submit" id="bidbtn">Place bid</button>
-    </form>
-    <p class="hint" id="hint"></p>
-    <p class="explain">Enter the most you would pay. The system bids for you only as much as needed to keep you ahead, one increment at a time. Your maximum stays private.</p>
-    <h3>Bid history</h3>
-    <table>
-      <thead><tr><th>#</th><th>Bidder</th><th>Price after</th><th>Result</th></tr></thead>
-      <tbody id="history"></tbody>
-    </table>
-  </section>
-
-  <section class="panel detail placeholder" id="placeholder">
-    <p>Pick an auction on the left, or list an item to start one.</p>
-  </section>
-</main>
-<script src="app.js" type="module"></script>
+<div id="root"></div>
 </body>
 </html>

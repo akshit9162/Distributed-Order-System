@@ -16,6 +16,22 @@ jobs:
       - name: Test ${{ matrix.service }}
         working-directory: ${{ matrix.service }}
         run: mvn -B test
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: auction-service/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: auction-service/frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - name: Build, and check the committed page matches the source
+        run: npm run build && git diff --exit-code -- ../src/main/resources/static
   compile-all:
     runs-on: ubuntu-latest
     steps:

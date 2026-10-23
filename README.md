@@ -127,7 +127,13 @@ Kafka acknowledges it (a small transactional outbox). Delivery is therefore at l
 Events: price, leader, countdown, "you've been outbid", bid history. When an auction sells, an **order tracker**
 follows the winner's order through the SAGA (order created → stock reserved → payment taken → completed, or the
 failure and compensation steps). The page only talks to auction-service, which looks the order up in
-order-service by its key (`GET /orders/by-key/auction-{id}`) server to server. Plain JavaScript.
+order-service by its key (`GET /orders/by-key/auction-{id}`) server to server.
+
+The page is a **React** app (Vite) in `auction-service/frontend`: components for the list, detail, bid form,
+countdown, bid history and tracker, with custom hooks for the live auction (`EventSource`), bid history and order
+polling. Switching auctions remounts the detail view (`key={id}`), so no state leaks between auctions, and the bid
+form only renders once the auction has loaded. `npm run build` writes into `src/main/resources/static`, so the jar
+and Docker image serve it with no extra step; `npm run dev` serves it on :5173 against a running auction-service.
 
 **End to end** (`scripts/e2e-auctions.sh`, with `docker compose up -d`): Alice (balance 500) wins one auction and her
 order reaches COMPLETED, paying the second price; Bob (balance 10) wins another at 20, payment is rejected and his
@@ -143,11 +149,13 @@ all fixed:
 | A COMPLETED order reverted to INVENTORY_RESERVED | two listener threads updated the same order at once; the slower write overwrote the faster (no version check) | `@Version` on `Order`; the loser fails and Kafka retries it |
 
 Plus a startup race (Kafka timing out waiting for Zookeeper), fixed with `restart: on-failure`, and a page race where
-bidding right after opening an auction, before it had loaded, threw an error (the bid button now waits for the auction).
+bidding right after opening an auction, before it had loaded, threw an error (the bid form now renders only after the auction loads).
 
 **Tests.** 30 in auction-service (rules, increments, concurrency, idempotent retries, HTTP outcomes, closing, the
 outbox retrying while Kafka is down) and 11 in order-service (auction win → pending order → SAGA, redelivery,
 duplicate-key race, lookup by key, out-of-order saga events, concurrent order updates). Run with `mvn test` in each folder; no Docker needed.
+10 front-end tests (Vitest + Testing Library: live SSE updates, the outbid notice, bid outcomes, the order tracker, closing
+the stream) run with `npm test` in `auction-service/frontend`.
 
 ## AWS deployment
 
@@ -198,7 +206,7 @@ The auction service alone also runs without Docker: `cd auction-service && mvn s
 
 ## Tech stack
 
-Java 17, Spring Boot 3.3, Spring Kafka, Spring Data JPA, PostgreSQL, Redis, Server-Sent Events, JavaScript, Docker + Docker Compose, JUnit 5, GitHub Actions, AWS EC2.
+Java 17, Spring Boot 3.3, Spring Kafka, Spring Data JPA, PostgreSQL, Redis, Server-Sent Events, React, Vite, Vitest, JavaScript, Docker + Docker Compose, JUnit 5, GitHub Actions, AWS EC2.
 
 ## Contributors
 

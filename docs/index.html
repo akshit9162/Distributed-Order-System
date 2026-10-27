@@ -1,1122 +1,158 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Distributed Order System — Architecture Case Study</title>
-<meta name="description" content="A technical case study of a microservices order-processing pipeline implementing the SAGA pattern, Kafka event choreography, Redis distributed locking, optimistic concurrency control, and multi-layer idempotency.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%236366f1%22/><path d=%22M28 50 L46 68 L74 32%22 stroke=%22white%22 stroke-width=%229%22 fill=%22none%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/></svg>">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Distributed Order System: a SAGA over Kafka</title>
+<meta name="description" content="Order, inventory and payment as three Spring Boot services with three databases, kept consistent by a SAGA over Kafka. 50 requests for 10 units: 10 reserved, 40 rejected.">
+<meta property="og:title" content="Distributed Order System">
+<meta property="og:description" content="Three services, three databases, one consistent order: a SAGA over Kafka with compensation, locks and an auction front end.">
+<meta property="og:image" content="https://akshit9162.github.io/Distributed-Order-System/og.png">
+<meta property="og:url" content="https://akshit9162.github.io/Distributed-Order-System/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/atom-one-dark.min.css">
-<link rel="stylesheet" href="styles.css">
+<link href="https://fonts.googleapis.com/css2?family=Chivo+Mono:wght@400;500;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 
-<a class="skip-link" href="#main">Skip to content</a>
-
-<!-- ============ NAV ============ -->
-<header class="site-header" id="site-header">
-  <nav class="nav-inner">
-    <a href="#hero" class="brand">
-      <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 12l5 5L20 6" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </span>
-      <span class="brand-text">distributed<em>order</em>system</span>
-    </a>
-
-    <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="nav-links">
-      <span></span><span></span><span></span>
-    </button>
-
-    <div class="nav-links" id="nav-links">
-      <a href="#overview" data-nav>Overview</a>
-      <a href="#architecture" data-nav>Architecture</a>
-      <a href="#saga" data-nav>SAGA Flow</a>
-      <a href="#kafka" data-nav>Kafka</a>
-      <a href="#concurrency" data-nav>Concurrency</a>
-      <a href="#idempotency" data-nav>Idempotency</a>
-      <a href="#failures" data-nav>Failures</a>
-      <a href="#testing" data-nav>Testing</a>
-      <a href="#docker" data-nav>Docker</a>
-      <a href="#deployment" data-nav>Deployment</a>
-      <a href="#roadmap" data-nav>Roadmap</a>
-    </div>
-
-    <div class="nav-actions">
-      <button class="theme-toggle" id="theme-toggle" aria-label="Toggle color theme" title="Toggle theme">
-        <svg class="icon-sun" viewBox="0 0 24 24" width="17" height="17"><circle cx="12" cy="12" r="4.2" stroke="currentColor" stroke-width="1.8" fill="none"/><g stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2.5v2.3M12 19.2v2.3M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.5 12h2.3M19.2 12h2.3M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></g></svg>
-        <svg class="icon-moon" viewBox="0 0 24 24" width="17" height="17"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linejoin="round"/></svg>
-      </button>
-      <a class="btn btn-ghost btn-sm" href="https://github.com/akshit9162/Distributed-Order-System" target="_blank" rel="noopener">
-        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
-        <span class="gh-label">GitHub</span>
-      </a>
-    </div>
-  </nav>
-  <div class="nav-progress" id="nav-progress"></div>
+<header class="nav">
+  <div class="container">
+    <a class="wordmark" href="./">order-saga</a>
+    <ul class="nav__links">
+      <li><a href="#route">Route</a></li>
+      <li><a href="#proof">Proof</a></li>
+      <li><a href="#run">Run it</a></li>
+    </ul>
+    <a class="btn btn--line" href="https://github.com/akshit9162/Distributed-Order-System">GitHub</a>
+  </div>
 </header>
 
 <main id="main">
-
-<!-- ============ HERO ============ -->
-<section class="hero" id="hero">
-  <div class="hero-grid" aria-hidden="true"></div>
-  <div class="container hero-inner">
-    <div class="eyebrow reveal">
-      <span class="dot dot-live"></span> Architecture case study
-    </div>
-    <h1 class="reveal">A distributed order system that survives payment failures, duplicate requests, and concurrent buyers.</h1>
-    <p class="hero-lede reveal">
-      Three independently deployable Spring Boot services — <strong>orders</strong>, <strong>inventory</strong>, and <strong>payment</strong> —
-      coordinated by Kafka instead of a shared database, implementing the <strong>SAGA pattern</strong> for distributed transactions,
-      with real concurrency-safety and idempotency guarantees verified under load, not just claimed.
-    </p>
-    <div class="hero-actions reveal">
-      <a href="#architecture" class="btn btn-primary">Explore the architecture</a>
-      <a href="https://github.com/akshit9162/Distributed-Order-System" target="_blank" rel="noopener" class="btn btn-secondary">
-        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
-        View source
-      </a>
-    </div>
-
-    <div class="hero-stats reveal">
-      <div class="stat"><span class="stat-num">3</span><span class="stat-label">Independent services</span></div>
-      <div class="stat"><span class="stat-num">3</span><span class="stat-label">Databases (per-service)</span></div>
-      <div class="stat"><span class="stat-num">6</span><span class="stat-label">Kafka topics</span></div>
-      <div class="stat"><span class="stat-num">2</span><span class="stat-label">Concurrency strategies</span></div>
-      <div class="stat"><span class="stat-num">50/10</span><span class="stat-label">Threads proven race-free</span></div>
-    </div>
-  </div>
-</section>
-
-<!-- ============ OVERVIEW ============ -->
-<section class="section" id="overview">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="kicker">Why this exists</span>
-      <h2>A normal CRUD app reads and writes one database. This doesn't.</h2>
-      <p class="section-lede">
-        Inventory, payment, and order status are three separate services with three separate databases — true database-per-service.
-        There is no single transaction that can atomically reserve stock, charge a customer, and mark an order complete, because in
-        the real world those are often genuinely separate systems. That constraint is what makes this an interesting engineering
-        problem instead of a routine REST API.
-      </p>
-    </div>
-
-    <div class="problem-grid">
-      <article class="problem-card reveal">
-        <div class="problem-icon" style="--c:var(--danger)">
-          <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 3l9 16H3z" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linejoin="round"/><path d="M12 9v5M12 17.2v.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        </div>
-        <h3>Payment fails after inventory is reserved</h3>
-        <p>There's no shared transaction to roll back. The system has to explicitly <em>compensate</em> — tell inventory-service to
-        release the stock it already committed to. That compensating action is the actual SAGA pattern.</p>
-        <a href="#saga" class="problem-link">See the compensation flow →</a>
-      </article>
-
-      <article class="problem-card reveal">
-        <div class="problem-icon" style="--c:var(--warning)">
-          <svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 4v6h6M20 20v-6h-6" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.6 15a8 8 0 0 0 13.8 2.5M18.4 9A8 8 0 0 0 4.6 6.5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
-        </div>
-        <h3>A client retries a timed-out request</h3>
-        <p>Networks are unreliable — a client that never got a response might retry. Without idempotency, that turns into a duplicate
-        order, or worse, a duplicate charge. This system enforces idempotency at three separate layers.</p>
-        <a href="#idempotency" class="problem-link">See the idempotency layers →</a>
-      </article>
-
-      <article class="problem-card reveal">
-        <div class="problem-icon" style="--c:var(--accent)">
-          <svg viewBox="0 0 24 24" width="22" height="22"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8" fill="none"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M6.5 10v4a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2v-4" stroke="currentColor" stroke-width="1.8" fill="none"/><rect x="9" y="16" width="6" height="5" rx="1.5" stroke="currentColor" stroke-width="1.8" fill="none"/></svg>
-        </div>
-        <h3>Two orders want the last unit at once</h3>
-        <p>Two concurrent requests can both read "1 in stock" and both decide there's enough. Proven under real concurrent load — 50
-        threads competing for 10 units, exactly 10 win, every time.</p>
-        <a href="#concurrency" class="problem-link">See the concurrency test →</a>
-      </article>
-    </div>
-  </div>
-</section>
-
-<!-- ============ ARCHITECTURE ============ -->
-<section class="section section-alt" id="architecture">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="kicker">System design</span>
-      <h2>Three services. No shared database. One event bus.</h2>
-      <p class="section-lede">
-        Each service owns its data exclusively — no other service is allowed to touch it directly, not even for a read. The only way
-        services talk to each other is by publishing and consuming Kafka events. Hover a node for what it owns.
-      </p>
-    </div>
-
-    <div class="diagram-card reveal">
-      <div class="diagram-toolbar">
-        <span class="diagram-title">System topology</span>
-        <span class="diagram-hint">Hover a node for details</span>
-      </div>
-      <div class="svg-wrap">
-        <svg viewBox="0 0 900 420" role="img" aria-labelledby="arch-title" class="diagram-svg">
-          <title id="arch-title">System topology diagram</title>
-          <defs>
-            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 z" fill="var(--edge-color)"></path>
-            </marker>
-          </defs>
-
-          <!-- edges -->
-          <g class="edges">
-            <line x1="130" y1="200" x2="188" y2="200" class="edge edge-solid" marker-end="url(#arrow)"></line>
-            <line x1="392" y1="190" x2="458" y2="150" class="edge edge-solid" marker-end="url(#arrow)"></line>
-            <line x1="458" y1="215" x2="392" y2="235" class="edge edge-solid" marker-end="url(#arrow)"></line>
-            <line x1="610" y1="150" x2="678" y2="105" class="edge edge-solid" marker-end="url(#arrow)"></line>
-            <line x1="678" y1="130" x2="610" y2="175" class="edge edge-solid" marker-end="url(#arrow)"></line>
-            <line x1="610" y1="240" x2="678" y2="305" class="edge edge-solid" marker-end="url(#arrow)"></line>
-            <line x1="678" y1="330" x2="610" y2="260" class="edge edge-solid" marker-end="url(#arrow)"></line>
-            <line x1="290" y1="250" x2="410" y2="300" class="edge edge-dashed"></line>
-            <line x1="780" y1="140" x2="540" y2="303" class="edge edge-dashed"></line>
-          </g>
-
-          <!-- Client -->
-          <g class="node" tabindex="0" data-tooltip="External client — places orders via POST /orders and polls GET /orders/{id}.">
-            <rect x="20" y="170" width="110" height="60" rx="12" class="node-box node-box-ghost"></rect>
-            <text x="75" y="204" text-anchor="middle" class="node-title">Client</text>
-          </g>
-
-          <!-- order-service -->
-          <g class="node" tabindex="0" data-tooltip="order-service :8081 — owns order lifecycle &amp; SAGA status. DB: orderdb. Redis: cache-aside on GET /orders/{id}.">
-            <rect x="190" y="150" width="200" height="100" rx="14" class="node-box node-box-accent"></rect>
-            <text x="290" y="188" text-anchor="middle" class="node-title">order-service</text>
-            <text x="290" y="208" text-anchor="middle" class="node-port">:8081</text>
-            <text x="290" y="230" text-anchor="middle" class="node-sub">orderdb</text>
-          </g>
-
-          <!-- Kafka -->
-          <g class="node" tabindex="0" data-tooltip="Apache Kafka — 6 topics, 3 partitions each. The only channel services use to talk to one another.">
-            <rect x="460" y="130" width="150" height="160" rx="16" class="node-box node-box-kafka"></rect>
-            <text x="535" y="200" text-anchor="middle" class="node-title">Kafka</text>
-            <text x="535" y="222" text-anchor="middle" class="node-sub">6 topics</text>
-          </g>
-
-          <!-- inventory-service -->
-          <g class="node" tabindex="0" data-tooltip="inventory-service :8082 — owns stock levels. DB: inventorydb. Redis: distributed lock per productId.">
-            <rect x="680" y="40" width="200" height="100" rx="14" class="node-box node-box-success"></rect>
-            <text x="780" y="78" text-anchor="middle" class="node-title">inventory-service</text>
-            <text x="780" y="98" text-anchor="middle" class="node-port">:8082</text>
-            <text x="780" y="120" text-anchor="middle" class="node-sub">inventorydb</text>
-          </g>
-
-          <!-- payment-service -->
-          <g class="node" tabindex="0" data-tooltip="payment-service :8083 — owns customer balances. DB: paymentdb. Optimistic locking, no Redis dependency.">
-            <rect x="680" y="300" width="200" height="100" rx="14" class="node-box node-box-info"></rect>
-            <text x="780" y="338" text-anchor="middle" class="node-title">payment-service</text>
-            <text x="780" y="358" text-anchor="middle" class="node-port">:8083</text>
-            <text x="780" y="380" text-anchor="middle" class="node-sub">paymentdb</text>
-          </g>
-
-          <!-- Redis -->
-          <g class="node" tabindex="0" data-tooltip="Redis — dual purpose: distributed lock for inventory-service, cache-aside store for order-service.">
-            <rect x="380" y="300" width="160" height="70" rx="12" class="node-box node-box-redis"></rect>
-            <text x="460" y="330" text-anchor="middle" class="node-title">Redis</text>
-            <text x="460" y="350" text-anchor="middle" class="node-sub">lock + cache</text>
-          </g>
-        </svg>
-      </div>
-      <div class="diagram-legend">
-        <span><i class="legend-swatch legend-solid"></i> Kafka event</span>
-        <span><i class="legend-swatch legend-dashed"></i> Redis usage</span>
-      </div>
-    </div>
-
-    <div class="services-grid">
-      <article class="service-card reveal" style="--accent-c:var(--accent)">
-        <div class="service-card-top">
-          <span class="service-port">:8081</span>
-          <h3>order-service</h3>
-        </div>
-        <p>Owns the order lifecycle and the SAGA's source of truth. Accepts <code>POST /orders</code>, enforces the idempotency key,
-        publishes <code>order-created</code>, and reacts to every downstream event to drive the order's status forward — including
-        triggering the compensating rollback.</p>
-        <ul class="service-meta">
-          <li><strong>Database</strong> orderdb (Postgres)</li>
-          <li><strong>Cache</strong> Redis, cache-aside on <code>GET /orders/{id}</code></li>
-          <li><strong>Publishes</strong> order-created, order-rolled-back</li>
-          <li><strong>Consumes</strong> inventory-reserved, inventory-rejected, payment-confirmed, payment-rejected</li>
-        </ul>
-      </article>
-
-      <article class="service-card reveal" style="--accent-c:var(--success)">
-        <div class="service-card-top">
-          <span class="service-port">:8082</span>
-          <h3>inventory-service</h3>
-        </div>
-        <p>Owns stock levels. Guards every reservation with a Redis distributed lock scoped to the productId, so two concurrent
-        orders for the same item can never both succeed past what's actually available.</p>
-        <ul class="service-meta">
-          <li><strong>Database</strong> inventorydb (Postgres)</li>
-          <li><strong>Locking</strong> Redis <code>SET NX PX</code> + Lua compare-and-delete unlock, TTL watchdog renewal</li>
-          <li><strong>Publishes</strong> inventory-reserved, inventory-rejected</li>
-          <li><strong>Consumes</strong> order-created, order-rolled-back</li>
-        </ul>
-      </article>
-
-      <article class="service-card reveal" style="--accent-c:var(--info)">
-        <div class="service-card-top">
-          <span class="service-port">:8083</span>
-          <h3>payment-service</h3>
-        </div>
-        <p>Owns customer balances. Debits independently the moment it sees <code>inventory-reserved</code> — it doesn't wait for
-        order-service to tell it to. Uses JPA optimistic locking instead of a distributed lock, since conflicts per customer are rare.</p>
-        <ul class="service-meta">
-          <li><strong>Database</strong> paymentdb (Postgres)</li>
-          <li><strong>Locking</strong> JPA <code>@Version</code> optimistic locking + retry loop</li>
-          <li><strong>Publishes</strong> payment-confirmed, payment-rejected</li>
-          <li><strong>Consumes</strong> inventory-reserved</li>
-        </ul>
-      </article>
-    </div>
-
-    <div class="callout callout-info reveal">
-      <svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="9.2" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M12 11v5.5M12 7.6v.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      <p><strong>Choreography, not orchestration.</strong> There's no central conductor calling each service in turn. Every service
-      independently subscribes to the events it cares about and reacts — payment-service reads <code>inventory-reserved</code>
-      straight off Kafka, it never gets called by order-service directly. order-service happens to also listen to the same events
-      to keep the order's status up to date, but it isn't in the critical path. This is a deliberate tradeoff, discussed honestly
-      in <a href="#roadmap">Roadmap</a>.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ============ SAGA FLOW ============ -->
-<section class="section" id="saga">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="kicker">The SAGA pattern</span>
-      <h2>An order's status is a real, enforced state machine.</h2>
-      <p class="section-lede">
-        Every transition below is validated in code against this exact table — an illegal jump (say, <code>COMPLETED → ROLLING_BACK</code>)
-        throws rather than silently corrupting state, and a repeated status is a safe no-op instead of an error. That matters because
-        Kafka only guarantees <em>at-least-once</em> delivery: any of these events can legitimately arrive twice.
-      </p>
-    </div>
-
-    <div class="diagram-card reveal">
-      <div class="diagram-toolbar">
-        <span class="diagram-title">Order status state machine</span>
-        <div class="path-buttons" role="group" aria-label="Highlight a path">
-          <button class="chip-btn is-active" data-path="happy">Happy path</button>
-          <button class="chip-btn" data-path="inv-rejected">Inventory rejected</button>
-          <button class="chip-btn" data-path="rollback">Payment rejected → rollback</button>
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="container hero__grid">
+      <div class="hero__text">
+        <h1 id="hero-title">Three services, one order, no oversell.</h1>
+        <p class="intro">A SAGA over Kafka keeps stock, payment and order status consistent.</p>
+        <p class="sub">Each service owns its own Postgres. If payment fails, the order rolls back and its stock is released. Verified on AWS EC2.</p>
+        <p class="team">Team project with Harsh Kokcha. Akshit built the auction service.</p>
+        <div class="actions">
+          <a class="btn btn--primary" href="https://github.com/akshit9162/Distributed-Order-System">Read the code</a>
+          <a class="btn btn--line" href="#run">Run it</a>
         </div>
       </div>
-      <div class="svg-wrap">
-        <svg viewBox="0 0 1000 380" role="img" aria-labelledby="saga-title" class="diagram-svg">
-          <title id="saga-title">Order status state machine diagram</title>
-          <defs>
-            <marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 z" class="state-arrowhead"></path>
-            </marker>
-          </defs>
-
-          <g class="state-edge" data-group="happy rollback" data-edge>
-            <path d="M180,175 L258,175" fill="none" marker-end="url(#arrow2)"></path>
-            <text x="219" y="163" text-anchor="middle" class="edge-label">inventory-reserved</text>
-          </g>
-          <g class="state-edge" data-group="inv-rejected" data-edge>
-            <path d="M120,220 C120,300 200,325 258,325" fill="none" marker-end="url(#arrow2)"></path>
-            <text x="180" y="290" text-anchor="middle" class="edge-label">inventory-rejected</text>
-          </g>
-          <g class="state-edge" data-group="happy" data-edge>
-            <path d="M450,155 C500,110 510,95 558,80" fill="none" marker-end="url(#arrow2)"></path>
-            <text x="490" y="100" text-anchor="middle" class="edge-label">payment-confirmed</text>
-          </g>
-          <g class="state-edge" data-group="rollback" data-edge>
-            <path d="M450,195 C500,235 510,245 558,255" fill="none" marker-end="url(#arrow2)"></path>
-            <text x="500" y="270" text-anchor="middle" class="edge-label">payment-rejected</text>
-          </g>
-          <g class="state-edge" data-group="rollback" data-edge>
-            <path d="M730,255 L808,255" fill="none" marker-end="url(#arrow2)"></path>
-            <text x="769" y="243" text-anchor="middle" class="edge-label">order-rolled-back</text>
-          </g>
-
-          <g class="state-node" data-group="happy rollback inv-rejected" data-node>
-            <circle cx="55" cy="175" r="5" class="state-start-dot"></circle>
-            <text x="55" y="150" text-anchor="middle" class="edge-label">order created</text>
-            <rect x="20" y="150" width="160" height="50" rx="25" class="state-box state-box-pending"></rect>
-            <text x="100" y="180" text-anchor="middle" class="state-text">PENDING</text>
-          </g>
-
-          <g class="state-node" data-group="happy rollback" data-node>
-            <rect x="258" y="150" width="192" height="50" rx="14" class="state-box state-box-mid"></rect>
-            <text x="354" y="180" text-anchor="middle" class="state-text">INVENTORY_RESERVED</text>
-          </g>
-
-          <g class="state-node" data-group="inv-rejected" data-node>
-            <rect x="258" y="300" width="192" height="50" rx="14" class="state-box state-box-end-neutral"></rect>
-            <text x="354" y="330" text-anchor="middle" class="state-text">INVENTORY_REJECTED</text>
-          </g>
-
-          <g class="state-node" data-group="happy" data-node>
-            <rect x="558" y="55" width="170" height="50" rx="14" class="state-box state-box-end-good"></rect>
-            <text x="643" y="85" text-anchor="middle" class="state-text">COMPLETED</text>
-          </g>
-
-          <g class="state-node" data-group="rollback" data-node>
-            <rect x="558" y="230" width="170" height="50" rx="14" class="state-box state-box-mid-warn"></rect>
-            <text x="643" y="260" text-anchor="middle" class="state-text">ROLLING_BACK</text>
-          </g>
-
-          <g class="state-node" data-group="rollback" data-node>
-            <rect x="808" y="230" width="172" height="50" rx="14" class="state-box state-box-end-danger"></rect>
-            <text x="894" y="260" text-anchor="middle" class="state-text">ROLLED_BACK</text>
-          </g>
-        </svg>
-      </div>
-      <p class="diagram-caption" id="saga-caption">
-        <code>PENDING</code> → <code>INVENTORY_RESERVED</code> → <code>COMPLETED</code>. Inventory reserved, payment confirmed, order done.
-      </p>
+      <figure class="frame">
+        <img src="img/auction-service.png" width="1300" height="900" alt="The auction page: alice won a Leica M6 at $31.00, and a tracker shows her order moving from won at auction to completed" fetchpriority="high">
+        <figcaption>The auction front end: a won auction becomes an order.</figcaption>
+      </figure>
     </div>
+  </section>
 
-    <div class="code-panel reveal">
-      <div class="code-panel-head">
-        <span>order-service/model/Order.java</span>
-        <span class="code-panel-tag">the actual validation</span>
+  <section id="route" class="board" aria-labelledby="route-title">
+    <div class="container">
+      <div class="head">
+        <h2 id="route-title">Every event, every stop.</h2>
+        <p>Seven Kafka topics carry an order between services. Three of them undo work.</p>
       </div>
-      <pre><code class="language-java">private static final Map&lt;OrderStatus, Set&lt;OrderStatus&gt;&gt; ALLOWED_TRANSITIONS = Map.of(
-    OrderStatus.PENDING,             Set.of(OrderStatus.INVENTORY_RESERVED, OrderStatus.INVENTORY_REJECTED),
-    OrderStatus.INVENTORY_RESERVED,  Set.of(OrderStatus.COMPLETED, OrderStatus.ROLLING_BACK),
-    OrderStatus.ROLLING_BACK,        Set.of(OrderStatus.ROLLED_BACK)
-);
-
-public void transitionTo(OrderStatus newStatus) {
-    if (newStatus == this.status) return;               // redelivery of an already-applied event: no-op
-    Set&lt;OrderStatus&gt; allowed = ALLOWED_TRANSITIONS.getOrDefault(this.status, Set.of());
-    if (!allowed.contains(newStatus)) {
-        throw new IllegalStateException("Illegal order transition for " + id + ": " + this.status + " -&gt; " + newStatus);
-    }
-    this.status = newStatus;
-    this.updatedAt = Instant.now();
-}</code></pre>
+      <div class="scroll" tabindex="0" role="region" aria-label="SAGA events table">
+        <table>
+          <thead><tr><th scope="col">Topic</th><th scope="col" class="from">From</th><th scope="col">To</th><th scope="col" class="state">Result</th></tr></thead>
+          <tbody>
+            <tr><td>auction-won</td><td class="from">auction</td><td>order</td><td class="state">Order created</td></tr>
+            <tr><td>order-created</td><td class="from">order</td><td>inventory</td><td class="state">Pending</td></tr>
+            <tr><td>inventory-reserved</td><td class="from">inventory</td><td>payment</td><td class="state">Stock reserved</td></tr>
+            <tr><td>payment-confirmed</td><td class="from">payment</td><td>order</td><td class="state">Completed</td></tr>
+            <tr><td>inventory-rejected</td><td class="from">inventory</td><td>order</td><td class="state"><span class="late">Rejected</span></td></tr>
+            <tr><td>payment-rejected</td><td class="from">payment</td><td>order</td><td class="state"><span class="late">Rolled back</span></td></tr>
+            <tr><td>order-rolled-back</td><td class="from">order</td><td>inventory</td><td class="state"><span class="late">Stock released</span></td></tr>
+          </tbody>
+        </table>
       </div>
-  </div>
-</section>
-
-<!-- ============ KAFKA ============ -->
-<section class="section section-alt" id="kafka">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="kicker">Event-driven communication</span>
-      <h2>Services talk through Kafka, not through each other.</h2>
-      <p class="section-lede">
-        One topic per event type — simpler to reason about than a shared topic carrying multiple event shapes. Each service owns its
-        own copy of the event record classes rather than a shared library, keeping the services independently deployable at the cost
-        of some duplication.
-      </p>
+      <p class="board__note">A message that fails 3 times goes to its <code>.DLT</code> topic instead of blocking the partition.</p>
     </div>
+  </section>
 
-    <div class="diagram-card reveal">
-      <div class="diagram-toolbar">
-        <span class="diagram-title">Happy-path event sequence</span>
-        <button class="btn btn-sm btn-primary" id="play-sequence">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M7 5l12 7-12 7z"/></svg>
-          Play sequence
-        </button>
+  <section id="proof" aria-labelledby="proof-title">
+    <div class="container">
+      <div class="head">
+        <h2 id="proof-title">Measured under load.</h2>
+        <p>A Redis lock per product; version checks and retries for payments and bids.</p>
       </div>
-      <div class="svg-wrap">
-        <svg viewBox="0 0 980 520" role="img" aria-labelledby="kafka-title" class="diagram-svg">
-          <title id="kafka-title">Happy-path Kafka event sequence diagram</title>
-          <defs>
-            <marker id="arrow3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 z" class="seq-arrowhead"></path>
-            </marker>
-          </defs>
+      <ul class="plates">
+        <li class="plate"><p class="figure">10<span>of 50</span></p><h3>Reservations won</h3><p>50 at once for 10 units. 40 rejected, none oversold.</p></li>
+        <li class="plate"><p class="figure">0<span>failed</span></p><h3>Of 8,487 requests</h3><p>k6, 20 to 50 users: p95 136.68 ms, p99 202.96 ms, 169.6 req/s.</p></li>
+        <li class="plate"><p class="figure">379<span>retried</span></p><h3>Bid conflicts</h3><p>1,000 bids, 32 threads, one auction. A replay gives the same price.</p></li>
+      </ul>
+    </div>
+  </section>
 
-          <!-- lifelines -->
-          <line x1="110" y1="70" x2="110" y2="500" class="lifeline"></line>
-          <line x1="380" y1="70" x2="380" y2="500" class="lifeline"></line>
-          <line x1="630" y1="70" x2="630" y2="500" class="lifeline"></line>
-          <line x1="880" y1="70" x2="880" y2="500" class="lifeline"></line>
+  <section aria-labelledby="auction-title">
+    <div class="container">
+      <div class="head">
+        <h2 id="auction-title">From a winning bid to a paid order.</h2>
+        <p>The auction service hands its winner to the same SAGA as any order.</p>
+      </div>
+      <ol class="route">
+        <li><span class="route__n">1</span><h3>Bid</h3><p>Proxy bidding: the leader pays one increment over the second-highest maximum.</p></li>
+        <li><span class="route__n">2</span><h3>Close</h3><p>The close uses the same version check, so no last bid is lost.</p></li>
+        <li><span class="route__n">3</span><h3>Hand off</h3><p>An outbox re-sends the win; the key <code>auction-{id}</code> makes one order.</p></li>
+        <li><span class="route__n">4</span><h3>Pay</h3><p>Stock, then payment; a buyer who cannot pay rolls back.</p></li>
+      </ol>
+    </div>
+  </section>
 
-          <g class="lane-head">
-            <rect x="30" y="20" width="160" height="40" rx="10" class="lane-head-box"></rect>
-            <text x="110" y="45" text-anchor="middle" class="lane-head-text">order-service</text>
-            <rect x="310" y="20" width="140" height="40" rx="10" class="lane-head-box lane-head-kafka"></rect>
-            <text x="380" y="45" text-anchor="middle" class="lane-head-text">Kafka</text>
-            <rect x="550" y="20" width="160" height="40" rx="10" class="lane-head-box"></rect>
-            <text x="630" y="45" text-anchor="middle" class="lane-head-text">inventory-service</text>
-            <rect x="800" y="20" width="160" height="40" rx="10" class="lane-head-box"></rect>
-            <text x="880" y="45" text-anchor="middle" class="lane-head-text">payment-service</text>
-          </g>
-
-          <!-- step 1: order -> kafka -->
-          <g class="seq-step" data-step="1">
-            <line x1="110" y1="100" x2="374" y2="100" class="seq-arrow" marker-end="url(#arrow3)"></line>
-            <text x="245" y="90" text-anchor="middle" class="seq-label">order-created</text>
-            <circle cx="110" cy="100" r="5" class="seq-dot"></circle>
-          </g>
-
-          <!-- step 2: kafka -> inventory -->
-          <g class="seq-step" data-step="2">
-            <line x1="386" y1="150" x2="624" y2="150" class="seq-arrow" marker-end="url(#arrow3)"></line>
-            <text x="505" y="140" text-anchor="middle" class="seq-label">order-created</text>
-          </g>
-
-          <!-- step 3: inventory -> kafka (reserved) -->
-          <g class="seq-step" data-step="3">
-            <line x1="630" y1="205" x2="392" y2="205" class="seq-arrow" marker-end="url(#arrow3)"></line>
-            <text x="505" y="195" text-anchor="middle" class="seq-label">inventory-reserved</text>
-            <rect x="616" y="185" width="28" height="36" rx="4" class="seq-lock-badge"></rect>
-            <text x="630" y="208" text-anchor="middle" class="seq-lock-icon">🔒</text>
-          </g>
-
-          <!-- step 4: kafka fans out to payment AND order-service -->
-          <g class="seq-step" data-step="4">
-            <line x1="386" y1="260" x2="874" y2="260" class="seq-arrow" marker-end="url(#arrow3)"></line>
-            <text x="628" y="250" text-anchor="middle" class="seq-label">inventory-reserved (fan-out)</text>
-            <line x1="380" y1="260" x2="116" y2="290" class="seq-arrow seq-arrow-thin" marker-end="url(#arrow3)"></line>
-            <text x="200" y="315" text-anchor="middle" class="seq-label seq-label-small">also updates order status</text>
-          </g>
-
-          <!-- step 5: payment -> kafka -->
-          <g class="seq-step" data-step="5">
-            <line x1="880" y1="360" x2="392" y2="360" class="seq-arrow" marker-end="url(#arrow3)"></line>
-            <text x="628" y="350" text-anchor="middle" class="seq-label">payment-confirmed</text>
-          </g>
-
-          <!-- step 6: kafka -> order-service -->
-          <g class="seq-step" data-step="6">
-            <line x1="380" y1="420" x2="116" y2="420" class="seq-arrow" marker-end="url(#arrow3)"></line>
-            <text x="245" y="410" text-anchor="middle" class="seq-label">payment-confirmed</text>
-            <rect x="40" y="440" width="140" height="34" rx="8" class="seq-result-badge"></rect>
-            <text x="110" y="462" text-anchor="middle" class="seq-result-text">order COMPLETED</text>
-          </g>
-        </svg>
+  <section aria-labelledby="bugs-title">
+    <div class="container">
+      <div class="head">
+        <h2 id="bugs-title">What the first full run broke.</h2>
+        <p>Five bugs, all fixed.</p>
+      </div>
+      <div class="scroll" tabindex="0" role="region" aria-label="Bugs found table">
+        <table class="bugs">
+          <thead><tr><th scope="col">Found</th><th scope="col">Fix</th></tr></thead>
+          <tbody>
+            <tr><td>Images would not build on Apple Silicon</td><td>Multi-arch base image</td></tr>
+            <tr><td>Postgres skipped the init script</td><td>Executable bit recorded in git</td></tr>
+            <tr><td>SAGA stalled for about 5 minutes</td><td>Topics created with 3 partitions before services start</td></tr>
+            <tr><td>A fast payment arrived before its stock event</td><td>Pending may go straight to Completed</td></tr>
+            <tr><td>A Completed order reverted</td><td><code>@Version</code> on the order; the loser retries</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
+  </section>
 
-    <div class="topics-wrap reveal">
-      <table class="topics-table">
-        <thead>
-          <tr><th>Topic</th><th>Published by</th><th>Consumed by</th><th>Meaning</th></tr>
-        </thead>
-        <tbody>
-          <tr><td><code>order-created</code></td><td>order-service</td><td>inventory-service</td><td>New order accepted, needs stock reserved</td></tr>
-          <tr><td><code>inventory-reserved</code></td><td>inventory-service</td><td>order-service, payment-service</td><td>Stock locked; safe to attempt payment</td></tr>
-          <tr><td><code>inventory-rejected</code></td><td>inventory-service</td><td>order-service</td><td>Out of stock / unknown product — saga ends</td></tr>
-          <tr><td><code>payment-confirmed</code></td><td>payment-service</td><td>order-service</td><td>Customer charged — order completes</td></tr>
-          <tr><td><code>payment-rejected</code></td><td>payment-service</td><td>order-service</td><td>Charge failed — triggers compensation</td></tr>
-          <tr><td><code>order-rolled-back</code></td><td>order-service</td><td>inventory-service</td><td>Compensating transaction — release the stock</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="two-col reveal">
-      <div class="info-block">
-        <h3>Fault tolerance: dead-letter topics</h3>
-        <p>Every listener retries a failing message <strong>3 times, 1 second apart</strong>, before giving up and publishing the raw
-        record to a <code>&lt;topic&gt;.DLT</code> topic — instead of blocking the partition forever or silently dropping the message.
-        An operator can inspect <code>order-created.DLT</code>, <code>inventory-reserved.DLT</code>, etc. and decide whether to replay
-        or discard.</p>
-        <details class="code-details">
-          <summary>Show the config</summary>
-          <pre><code class="language-java">var recoverer = new DeadLetterPublishingRecoverer(kafkaOperations,
-    (record, ex) -&gt; new TopicPartition(record.topic() + ".DLT", record.partition()));
-var backOff = new FixedBackOff(1000L, 3L);
-return new DefaultErrorHandler(recoverer, backOff);</code></pre>
-        </details>
+  <section id="run" class="close" aria-labelledby="run-title">
+    <div class="container close__grid">
+      <div class="close__text">
+        <h2 id="run-title">Run it.</h2>
+        <p>52 tests need no Docker. The end-to-end script needs the stack up and ready.</p>
+        <a class="btn btn--primary" href="https://github.com/akshit9162/Distributed-Order-System#running-it-locally">Full setup</a>
       </div>
-      <div class="info-block">
-        <h3>At-least-once, not exactly-once</h3>
-        <p>Spring Kafka's default delivery guarantee means any listener above can run more than once for the same event — a retry, a
-        consumer-group rebalance, a redelivered message. That single fact is the reason the <a href="#idempotency">idempotency layer</a>
-        exists: every consumer that causes a side effect (debit an account, reserve stock, change order status) checks whether it has
-        already handled this exact order before doing anything irreversible.</p>
-      </div>
+<pre tabindex="0" aria-label="Commands to run the tests and the end-to-end check"><code>git clone https://github.com/akshit9162/Distributed-Order-System
+cd Distributed-Order-System
+<span class="c"># 31 + 11 tests</span>
+(cd auction-service &amp;&amp; mvn test)
+(cd order-service &amp;&amp; mvn test)
+<span class="c"># 10 front-end tests</span>
+cd auction-service/frontend
+npm ci &amp;&amp; npm test &amp;&amp; cd ../..
+<span class="c"># Alice pays; Bob is rolled back</span>
+docker compose up -d
+until curl -sf localhost:8084/ &gt;/dev/null; do sleep 5; done
+scripts/e2e-auctions.sh</code></pre>
     </div>
-  </div>
-</section>
-
-<!-- ============ DATABASE PER SERVICE ============ -->
-<section class="section" id="data">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="kicker">Data ownership</span>
-      <h2>Database-per-service, enforced, not just diagrammed.</h2>
-      <p class="section-lede">
-        There is no schema that any two services both read from. Each Postgres database is provisioned separately by
-        <code>infra/init-multiple-dbs.sh</code> when the stack starts, and each service's JPA config only ever points at its own.
-      </p>
-    </div>
-
-    <div class="db-grid reveal">
-      <div class="db-card">
-        <div class="db-card-icon"><svg viewBox="0 0 24 24" width="20" height="20"><ellipse cx="12" cy="5.5" rx="8" ry="3" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M4 5.5v13c0 1.66 3.58 3 8 3s8-1.34 8-3v-13" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" stroke="currentColor" stroke-width="1.7" fill="none"/></svg></div>
-        <h3>orderdb</h3>
-        <p>Owned by order-service.</p>
-        <code class="db-table">orders</code>
-        <p class="db-note">Unique constraint on <code>idempotency_key</code> — the DB itself is the final authority on duplicate requests, not just the application check.</p>
-      </div>
-      <div class="db-card">
-        <div class="db-card-icon"><svg viewBox="0 0 24 24" width="20" height="20"><ellipse cx="12" cy="5.5" rx="8" ry="3" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M4 5.5v13c0 1.66 3.58 3 8 3s8-1.34 8-3v-13" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" stroke="currentColor" stroke-width="1.7" fill="none"/></svg></div>
-        <h3>inventorydb</h3>
-        <p>Owned by inventory-service.</p>
-        <code class="db-table">inventory_items</code>
-        <code class="db-table">reservation_records</code>
-        <p class="db-note">The reservation ledger makes reservations idempotent per order — see <a href="#idempotency">Idempotency</a>.</p>
-      </div>
-      <div class="db-card">
-        <div class="db-card-icon"><svg viewBox="0 0 24 24" width="20" height="20"><ellipse cx="12" cy="5.5" rx="8" ry="3" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M4 5.5v13c0 1.66 3.58 3 8 3s8-1.34 8-3v-13" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" stroke="currentColor" stroke-width="1.7" fill="none"/></svg></div>
-        <h3>paymentdb</h3>
-        <p>Owned by payment-service.</p>
-        <code class="db-table">accounts</code>
-        <code class="db-table">payment_records</code>
-        <p class="db-note"><code>accounts.version</code> backs the optimistic lock; the payment ledger makes charges idempotent per order.</p>
-      </div>
-    </div>
-
-    <div class="callout callout-neutral reveal">
-      <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3l9 16H3z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/><path d="M12 9v5M12 17.2v.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-      <p><strong>Trade-off, on purpose:</strong> no shared library for the Kafka event classes means each service maintains its own
-      copy of <code>OrderCreatedEvent</code>, <code>InventoryReservedEvent</code>, etc. That's duplication — and it's the standard
-      price of keeping services independently deployable instead of coupled through a shared JAR.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ============ CONCURRENCY ============ -->
-<section class="section section-alt" id="concurrency">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="kicker">Concurrency safety</span>
-      <h2>Two different strategies, on purpose.</h2>
-      <p class="section-lede">
-        Both services face "two writers, one row" — but the conflict profile is different, so the right tool is different. That
-        contrast is the actual point of building both into one project instead of picking one and using it everywhere.
-      </p>
-    </div>
-
-    <div class="tabs reveal" data-tabs>
-      <div class="tab-list" role="tablist">
-        <button class="tab-btn is-active" role="tab" data-tab="redis">inventory-service — Redis lock</button>
-        <button class="tab-btn" role="tab" data-tab="optimistic">payment-service — Optimistic locking</button>
-      </div>
-
-      <div class="tab-panel is-active" data-panel="redis">
-        <div class="tab-panel-grid">
-          <div>
-            <p><strong>Why a lock:</strong> conflicts here are common — many orders can compete for one popular product at the same
-            instant, so blocking upfront and making everyone else wait their turn is worth the cost.</p>
-            <ul class="check-list">
-              <li><code>SET key value NX PX 5000</code> — atomic acquire, only succeeds if nobody else holds it, with a TTL so a
-              crashed holder can't lock a product forever.</li>
-              <li>Unlock runs a Lua script that checks the lock's value before deleting — so service A can never release a lock that
-              service B acquired after A's already expired (the classic "delete someone else's lock" bug).</li>
-              <li><strong>TTL watchdog:</strong> a background renewal thread extends the TTL every 2s for as long as the lock is
-              held, via the same ownership-checked Lua script. Without this, a reservation that stalled past 5s (GC pause, slow
-              query) would silently lose the lock mid-operation.</li>
-              <li>Retries acquisition up to 30× with a 50ms pause instead of failing immediately on contention — proven necessary
-              by the stress test (see <a href="#testing">Testing</a>): without the retry, 50 concurrent requests for 10 units
-              produced only 1 success, not 10, because everyone bailed on their first failed attempt.</li>
-            </ul>
-          </div>
-          <details class="code-details">
-            <summary>Show RedisLockService.java (acquire + unlock)</summary>
-            <pre><code class="language-java">public String tryLock(String productId) {
-    String token = UUID.randomUUID().toString();
-    String key = LOCK_PREFIX + productId;
-    Boolean acquired = redisTemplate.opsForValue().setIfAbsent(key, token, LOCK_TTL);
-    if (!Boolean.TRUE.equals(acquired)) return null;
-    startRenewal(key, token);   // watchdog: extends TTL every 2s while held
-    return token;
-}
-
-private static final String UNLOCK_SCRIPT =
-    "if redis.call('get', KEYS[1]) == ARGV[1] then " +
-    "  return redis.call('del', KEYS[1]) " +
-    "else return 0 end";
-
-public void unlock(String productId, String token) {
-    stopRenewal(LOCK_PREFIX + productId);
-    redisTemplate.execute(new DefaultRedisScript&lt;&gt;(UNLOCK_SCRIPT, Long.class),
-        Collections.singletonList(LOCK_PREFIX + productId), token);
-}</code></pre>
-          </details>
-        </div>
-      </div>
-
-      <div class="tab-panel" data-panel="optimistic">
-        <div class="tab-panel-grid">
-          <div>
-            <p><strong>Why not a lock:</strong> conflicts here are rare — one customer almost never has two payments in flight at
-            once, so it's cheaper to let both proceed optimistically and make the rare loser retry than to pay the cost of blocking
-            on every single charge.</p>
-            <ul class="check-list">
-              <li><code>@Version</code> on <code>Account</code> — JPA increments it on every update and includes it in the
-              <code>WHERE</code> clause; a concurrent write from a stale read throws
-              <code>OptimisticLockingFailureException</code> instead of silently overwriting the other transaction's debit.</li>
-              <li>The consumer catches that exception and retries up to 3 times, re-reading the account fresh each attempt — never
-              retrying with the stale entity.</li>
-              <li>Third failure publishes <code>payment-rejected</code> with "too many concurrent payment attempts" rather than
-              retrying forever.</li>
-            </ul>
-          </div>
-          <details class="code-details">
-            <summary>Show PaymentProcessingService.java (debit + retry)</summary>
-            <pre><code class="language-java">@Transactional
-public PaymentRecord attemptCharge(UUID orderId, String customerId, BigDecimal amount) {
-    Account account = accountRepository.findById(customerId).orElseThrow(...);
-    if (!account.debit(amount)) return recordRejection(orderId, "Insufficient funds");
-    accountRepository.save(account);   // throws OptimisticLockingFailureException on conflict
-    return paymentRecordRepository.save(new PaymentRecord(orderId, CONFIRMED, "Charged " + amount));
-}
-
-// in the Kafka listener:
-for (int attempt = 1; attempt &lt;= MAX_RETRIES; attempt++) {
-    try {
-        return publish(paymentProcessingService.attemptCharge(orderId, customerId, amount));
-    } catch (OptimisticLockingFailureException e) {
-        if (attempt == MAX_RETRIES) return publish(recordRejection(orderId, "Too many concurrent attempts"));
-    }
-}</code></pre>
-          </details>
-        </div>
-      </div>
-    </div>
-
-    <div class="compare-table reveal">
-      <table>
-        <thead><tr><th></th><th>inventory-service</th><th>payment-service</th></tr></thead>
-        <tbody>
-          <tr><td>Strategy</td><td>Pessimistic — Redis distributed lock</td><td>Optimistic — JPA <code>@Version</code></td></tr>
-          <tr><td>Conflict frequency</td><td>High (popular products)</td><td>Low (per customer)</td></tr>
-          <tr><td>Behavior under contention</td><td>Waits, retries acquiring the lock</td><td>Proceeds, retries only on a real conflict</td></tr>
-          <tr><td>Failure mode</td><td>Lock TTL expiry (mitigated by watchdog renewal)</td><td>Exhausted retries → payment rejected</td></tr>
-          <tr><td>Scope</td><td>Single Redis node (no Redlock)</td><td>Single Postgres row</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</section>
-
-<!-- ============ IDEMPOTENCY ============ -->
-<section class="section" id="idempotency">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="kicker">Defense in depth</span>
-      <h2>Idempotency enforced at three separate layers.</h2>
-      <p class="section-lede">
-        A duplicate request can arrive two different ways — a client retry over HTTP, or a Kafka redelivery internally — so
-        idempotency has to be enforced at both boundaries, not just the one that's easy to demo.
-      </p>
-    </div>
-
-    <div class="layer-stack reveal">
-      <article class="layer-card">
-        <div class="layer-num">1</div>
-        <div>
-          <h3>HTTP boundary — client idempotency key</h3>
-          <p><code>POST /orders</code> takes a client-supplied <code>idempotencyKey</code>. order-service checks for an existing
-          order with that key first; if two requests race past that check simultaneously, a <strong>unique constraint on the
-          column</strong> is the real source of truth — the in-memory check is just an optimization to avoid hitting it in the
-          common case.</p>
-          <details class="code-details">
-            <summary>Show OrderController.java</summary>
-            <pre><code class="language-java">var existing = orderRepository.findByIdempotencyKey(request.idempotencyKey());
-if (existing.isPresent()) return ResponseEntity.ok(OrderResponse.from(existing.get()));
-
-try {
-    order = orderRepository.save(order);
-} catch (DataIntegrityViolationException e) {
-    // Race: both requests passed the check above before either committed.
-    Order winner = orderRepository.findByIdempotencyKey(request.idempotencyKey()).orElseThrow(() -&gt; e);
-    return ResponseEntity.ok(OrderResponse.from(winner));
-}</code></pre>
-          </details>
-        </div>
-      </article>
-
-      <article class="layer-card">
-        <div class="layer-num">2</div>
-        <div>
-          <h3>Kafka consumer boundary — per-order outcome ledgers</h3>
-          <p>Kafka's at-least-once delivery means <code>onInventoryReserved</code> or <code>onOrderCreated</code> can fire twice for
-          the same order. <code>PaymentRecord</code> and <code>ReservationRecord</code> are written <strong>in the same
-          transaction</strong> as the debit / stock update, keyed by <code>orderId</code>. Before doing anything, each consumer
-          checks for an existing record and replays the recorded outcome instead of re-running the side effect.</p>
-          <p class="layer-fix-note">
-            <svg viewBox="0 0 24 24" width="15" height="15"><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9.5" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
-            This is what closes the double-charge / double-reservation bug: without it, a transient failure between "debit
-            committed" and "confirmation published" would cause a redelivery to charge the customer twice.
-          </p>
-        </div>
-      </article>
-
-      <article class="layer-card">
-        <div class="layer-num">3</div>
-        <div>
-          <h3>Domain boundary — the state machine itself</h3>
-          <p>Even if a redelivered event somehow reached the consumer after the order already finished, <code>Order.transitionTo()</code>
-          refuses an illegal transition and no-ops on a repeated one (see <a href="#saga">SAGA Flow</a>). Concretely: a redelivered
-          <code>PaymentRejectedEvent</code> after an order already rolled back can no longer re-publish the compensating
-          <code>order-rolled-back</code> event and cause inventory-service to release the same stock twice.</p>
-        </div>
-      </article>
-    </div>
-  </div>
-</section>
-
-<!-- ============ FAILURES / ROLLBACK ============ -->
-<section class="section section-alt" id="failures">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="kicker">Failure handling</span>
-      <h2>What actually happens when payment fails.</h2>
-      <p class="section-lede">
-        Walk through the exact sequence order-service runs when inventory was already reserved but the charge is declined — the
-        compensating transaction that makes this a real SAGA implementation, not just a happy-path demo.
-      </p>
-    </div>
-
-    <ol class="timeline reveal">
-      <li class="timeline-item">
-        <div class="timeline-marker">1</div>
-        <div class="timeline-body">
-          <h4>Order reaches <code>INVENTORY_RESERVED</code></h4>
-          <p>inventory-service reserved the stock and published <code>inventory-reserved</code>. payment-service picked it up
-          independently and attempted to charge the customer — and the charge was declined (insufficient funds, or too many
-          concurrent attempts on that account).</p>
-        </div>
-      </li>
-      <li class="timeline-item">
-        <div class="timeline-marker">2</div>
-        <div class="timeline-body">
-          <h4>payment-service publishes <code>payment-rejected</code></h4>
-          <p>With a reason string attached ("Insufficient funds", etc). No money moved — the failed <code>debit()</code> call never
-          persisted.</p>
-        </div>
-      </li>
-      <li class="timeline-item">
-        <div class="timeline-marker">3</div>
-        <div class="timeline-body">
-          <h4>order-service transitions the order to <code>ROLLING_BACK</code></h4>
-          <p>This transition is only legal from <code>INVENTORY_RESERVED</code> — enforced by the state machine. A redelivery of
-          this same event after the order already finished rolling back is rejected here and skipped, not re-processed.</p>
-        </div>
-      </li>
-      <li class="timeline-item timeline-danger">
-        <div class="timeline-marker">4</div>
-        <div class="timeline-body">
-          <h4>order-service publishes <code>order-rolled-back</code> — the compensating transaction</h4>
-          <p>This is the actual SAGA compensation step: since there's no shared transaction to roll back, order-service explicitly
-          tells inventory-service to undo what it already committed.</p>
-        </div>
-      </li>
-      <li class="timeline-item">
-        <div class="timeline-marker">5</div>
-        <div class="timeline-body">
-          <h4>inventory-service releases the reserved stock</h4>
-          <p>The units go back into <code>available()</code>, under the same Redis lock used to reserve them.</p>
-        </div>
-      </li>
-      <li class="timeline-item">
-        <div class="timeline-marker">6</div>
-        <div class="timeline-body">
-          <h4>Order reaches <code>ROLLED_BACK</code> — terminal state</h4>
-          <p>The saga is done. The customer was never charged, and the stock is available again for the next order.</p>
-        </div>
-      </li>
-    </ol>
-
-    <div class="callout callout-warning reveal">
-      <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3l9 16H3z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/><path d="M12 9v5M12 17.2v.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-      <p><strong>What isn't handled yet:</strong> the transition to <code>ROLLING_BACK</code> and the publish of
-      <code>order-rolled-back</code> are two separate steps, not one atomic unit — a crash in between them would leave an order
-      stuck in <code>ROLLING_BACK</code> with the compensating event never sent. A full outbox pattern would close this; it isn't
-      implemented here. See <a href="#roadmap">Roadmap</a>.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ============ TESTING ============ -->
-<section class="section" id="testing">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="kicker">Verification</span>
-      <h2>What's actually tested — and what isn't.</h2>
-      <p class="section-lede">
-One JUnit test and one load test exist in this repository, both with real, published run results. They're presented honestly
-        below, next to what they do <em>not</em> cover.
-      </p>
-    </div>
-
-    <div class="test-showcase reveal">
-      <div class="test-showcase-main">
-        <span class="status-badge status-done">✓ Implemented &amp; verified</span>
-        <h3>InventoryConcurrencyTest</h3>
-        <p>Fires <strong>50 concurrent reservation attempts</strong> at a product with exactly <strong>10 units</strong> of stock,
-        against a real Redis instance (not mocked), and asserts exactly 10 succeed and 40 are correctly rejected.</p>
-        <div class="test-result">
-          <span class="test-result-label">Verified result</span>
-          <code>50 concurrent requests for 10 units of stock → 10 reserved, 40 rejected, in 2801 ms</code>
-        </div>
-        <details class="code-details">
-          <summary>Show the assertion</summary>
-          <pre><code class="language-java">assertEquals(TOTAL_STOCK, successCount.get(), "Should reserve exactly as many units as were in stock");
-assertEquals(CONCURRENT_REQUESTS - TOTAL_STOCK, rejectedCount.get(), "Remaining requests should be correctly rejected");
-assertEquals(TOTAL_STOCK, finalState.getReservedQuantity(), "Reserved quantity should never exceed total stock");
-assertEquals(0, finalState.available(), "No stock should remain available after exactly matching demand");</code></pre>
-        </details>
-        <p class="run-cmd">
-          <code>docker-compose up -d redis &amp;&amp; cd inventory-service &amp;&amp; mvn test -Dtest=InventoryConcurrencyTest</code>
-        </p>
-      </div>
-      <div class="test-showcase-side">
-        <h4>Not covered by automated tests</h4>
-        <ul class="gap-list">
-          <li>No integration test exercising the full saga end-to-end (order → inventory → payment → completion)</li>
-          <li>No automated tests for order-service or payment-service specifically</li>
-          <li>No test simulating a mid-saga crash / partial-failure recovery</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="test-showcase reveal" style="margin-top: 20px;">
-      <div class="test-showcase-main">
-        <span class="status-badge status-done">✓ Implemented &amp; verified</span>
-        <h3>order-load-test.js (k6)</h3>
-        <p>Ramps <code>POST /orders</code> from 20 → 50 concurrent virtual users against a fully running stack (Kafka, Postgres,
-        Redis, all three services in Docker), asserting p95 &lt; 200ms, p99 &lt; 500ms, and a failure rate under 1%. Measures
-        order-acceptance latency — how fast order-service validates, persists, and publishes the Kafka event — not full saga
-        completion time, since inventory and payment processing happen asynchronously after the response returns.</p>
-        <div class="test-result">
-          <span class="test-result-label">Verified result — all thresholds passed</span>
-          <code>8487 requests, 0 failed (0.00%), p(95)=136.68ms, p(99)=202.96ms, throughput=169.6 req/s</code>
-        </div>
-        <p class="run-cmd">
-          <code>docker-compose up -d &amp;&amp; k6 run load-test/order-load-test.js</code>
-        </p>
-      </div>
-      <div class="test-showcase-side">
-        <h4>What this does &amp; doesn't measure</h4>
-        <ul class="gap-list">
-          <li>Measures request-accept latency at the HTTP boundary, not end-to-end saga completion</li>
-          <li>Single-machine local Docker run, not a distributed multi-node deployment</li>
-          <li>Stock and account balance were seeded artificially high so the test measures throughput, not rejection paths</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============ DOCKER ============ -->
-<section class="section section-alt" id="docker">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="kicker">Local development</span>
-      <h2>One command spins up the entire stack.</h2>
-      <p class="section-lede">
-        <code>docker-compose.yml</code> orchestrates every piece of infrastructure plus all three services. Postgres provisions
-        three separate databases on startup via <code>infra/init-multiple-dbs.sh</code>, matching the database-per-service design.
-      </p>
-    </div>
-
-    <div class="diagram-card reveal">
-      <div class="diagram-toolbar"><span class="diagram-title">docker-compose topology</span></div>
-      <div class="svg-wrap">
-        <svg viewBox="0 0 980 340" role="img" aria-labelledby="docker-title" class="diagram-svg">
-          <title id="docker-title">docker-compose service topology</title>
-          <rect x="10" y="10" width="960" height="320" rx="18" class="compose-frame"></rect>
-          <text x="34" y="38" class="compose-frame-label">docker-compose.yml</text>
-
-          <!-- infra row -->
-          <g class="node" tabindex="0" data-tooltip="Zookeeper — coordinates the Kafka broker.">
-            <rect x="40" y="60" width="150" height="64" rx="10" class="node-box node-box-infra"></rect>
-            <text x="115" y="97" text-anchor="middle" class="node-title-sm">zookeeper</text>
-          </g>
-          <g class="node" tabindex="0" data-tooltip="Kafka broker — 3 partitions per topic, PLAINTEXT for local + host access.">
-            <rect x="220" y="60" width="150" height="64" rx="10" class="node-box node-box-kafka"></rect>
-            <text x="295" y="97" text-anchor="middle" class="node-title-sm">kafka</text>
-          </g>
-          <g class="node" tabindex="0" data-tooltip="Postgres — provisions orderdb, inventorydb, paymentdb via infra/init-multiple-dbs.sh on first boot.">
-            <rect x="400" y="60" width="190" height="64" rx="10" class="node-box node-box-infra"></rect>
-            <text x="495" y="90" text-anchor="middle" class="node-title-sm">postgres</text>
-            <text x="495" y="108" text-anchor="middle" class="node-sub-sm">3 databases</text>
-          </g>
-          <g class="node" tabindex="0" data-tooltip="Redis — used by order-service (cache) and inventory-service (lock). payment-service does not use it.">
-            <rect x="620" y="60" width="150" height="64" rx="10" class="node-box node-box-redis"></rect>
-            <text x="695" y="97" text-anchor="middle" class="node-title-sm">redis</text>
-          </g>
-
-          <!-- dependency lines -->
-          <line x1="115" y1="124" x2="295" y2="220" class="compose-line"></line>
-          <line x1="295" y1="124" x2="295" y2="220" class="compose-line"></line>
-          <line x1="495" y1="124" x2="295" y2="220" class="compose-line"></line>
-          <line x1="695" y1="124" x2="295" y2="220" class="compose-line"></line>
-
-          <line x1="295" y1="124" x2="510" y2="220" class="compose-line"></line>
-          <line x1="495" y1="124" x2="510" y2="220" class="compose-line"></line>
-          <line x1="695" y1="124" x2="510" y2="220" class="compose-line"></line>
-
-          <line x1="295" y1="124" x2="740" y2="220" class="compose-line"></line>
-          <line x1="495" y1="124" x2="740" y2="220" class="compose-line"></line>
-
-          <!-- services row -->
-          <g class="node" tabindex="0" data-tooltip="order-service :8081 — depends on kafka, postgres, redis.">
-            <rect x="190" y="220" width="210" height="80" rx="12" class="node-box node-box-accent"></rect>
-            <text x="295" y="255" text-anchor="middle" class="node-title-sm">order-service</text>
-            <text x="295" y="275" text-anchor="middle" class="node-port">:8081</text>
-          </g>
-          <g class="node" tabindex="0" data-tooltip="inventory-service :8082 — depends on kafka, postgres, redis.">
-            <rect x="405" y="220" width="210" height="80" rx="12" class="node-box node-box-success"></rect>
-            <text x="510" y="255" text-anchor="middle" class="node-title-sm">inventory-service</text>
-            <text x="510" y="275" text-anchor="middle" class="node-port">:8082</text>
-          </g>
-          <g class="node" tabindex="0" data-tooltip="payment-service :8083 — depends on kafka, postgres only (no Redis).">
-            <rect x="635" y="220" width="210" height="80" rx="12" class="node-box node-box-info"></rect>
-            <text x="740" y="255" text-anchor="middle" class="node-title-sm">payment-service</text>
-            <text x="740" y="275" text-anchor="middle" class="node-port">:8083</text>
-          </g>
-        </svg>
-      </div>
-    </div>
-
-    <div class="cmd-block reveal">
-      <div class="cmd-block-head">
-        <span>Quick start</span>
-      </div>
-      <pre class="cmd-lines"><code><span class="cmd-comment"># 1. Start infrastructure — zookeeper, kafka, postgres (×3 dbs), redis</span>
-<span class="cmd-line" data-copy="docker-compose up -d">docker-compose up -d</span>
-
-<span class="cmd-comment"># 2. Run each service (separate terminals)</span>
-<span class="cmd-line" data-copy="cd order-service && mvn spring-boot:run">cd order-service &amp;&amp; mvn spring-boot:run</span>
-<span class="cmd-line" data-copy="cd inventory-service && mvn spring-boot:run">cd inventory-service &amp;&amp; mvn spring-boot:run</span>
-<span class="cmd-line" data-copy="cd payment-service && mvn spring-boot:run">cd payment-service &amp;&amp; mvn spring-boot:run</span>
-
-<span class="cmd-comment"># 3. Seed stock and a funded account</span>
-<span class="cmd-line" data-copy='curl -X POST localhost:8082/inventory/seed -H "Content-Type: application/json" -d "{\"productId\": \"sku-123\", \"quantity\": 10}"'>curl -X POST localhost:8082/inventory/seed -d '{"productId":"sku-123","quantity":10}'</span>
-<span class="cmd-line" data-copy='curl -X POST localhost:8083/accounts/seed -H "Content-Type: application/json" -d "{\"customerId\": \"cust-1\", \"balance\": 500.00}"'>curl -X POST localhost:8083/accounts/seed -d '{"customerId":"cust-1","balance":500.00}'</span>
-
-<span class="cmd-comment"># 4. Place an order</span>
-<span class="cmd-line" data-copy='curl -X POST localhost:8081/orders -H "Content-Type: application/json" -d "{\"idempotencyKey\": \"demo-key-1\", \"customerId\": \"cust-1\", \"productId\": \"sku-123\", \"quantity\": 2, \"amount\": 49.99}"'>curl -X POST localhost:8081/orders -d '{"idempotencyKey":"demo-key-1", ...}'</span>
-<span class="cmd-comment"># → progresses to COMPLETED within a second or two</span></code></pre>
-    </div>
-
-    <div class="build-note reveal">
-      <p>Each service builds as a two-stage Docker image: a Maven+JDK 17 build stage, then an <code>eclipse-temurin:17-jre-alpine</code>
-      runtime stage — the JDK and Maven never ship, keeping the final image roughly 180MB instead of 600MB+.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ============ DEPLOYMENT ============ -->
-<section class="section" id="deployment">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="kicker">Running it for real</span>
-      <h2>Deployed and exercised on AWS, not just local Docker.</h2>
-    </div>
-
-    <div class="deploy-grid reveal">
-      <article class="deploy-card">
-        <span class="status-badge status-done">✓ Done</span>
-        <h3>Single-instance EC2 deployment</h3>
-        <p>The full stack — Kafka, Postgres, Redis, and all three services — has been run as containers on a single AWS EC2 instance
-        (Ubuntu, t3.medium) using the same <code>docker-compose.yml</code> as local development. An order was placed from an
-        external client against the instance's public IP and observed transitioning through to <code>COMPLETED</code>.</p>
-      </article>
-      <article class="deploy-card deploy-card-muted">
-        <span class="status-badge status-partial">⚠ Not currently in this repository</span>
-        <h3>Managed-services IaC (Terraform)</h3>
-        <p>A production-style deployment — RDS Postgres, ElastiCache Redis, MSK Serverless, ECR, ECS Fargate — was part of an earlier
-        iteration of this project. The <code>/terraform</code> directory has since been removed from the repository, so no Terraform
-        configuration currently ships with this codebase. Treat any reference to it elsewhere as historical.</p>
-      </article>
-    </div>
-  </div>
-</section>
-
-<!-- ============ ROADMAP / HONESTY ============ -->
-<section class="section section-alt" id="roadmap">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="kicker">Honest status</span>
-      <h2>What's real, and what's still a known gap.</h2>
-      <p class="section-lede">
-        Every claim on this page is checked against the current codebase, not the project's marketing copy. This section exists so
-        nothing above has to be taken on faith.
-      </p>
-    </div>
-
-    <div class="honesty-grid reveal">
-      <div class="honesty-col">
-        <h3 class="honesty-col-title honesty-good">Implemented &amp; verified</h3>
-        <ul class="honesty-list">
-          <li>Choreography-based SAGA with a validated, enforced order state machine</li>
-          <li>Redis distributed lock with TTL watchdog renewal for inventory reservation</li>
-          <li>JPA optimistic locking + bounded retry for payment</li>
-          <li>Three-layer idempotency: HTTP key, Kafka consumer ledgers, state-machine guard</li>
-          <li>Dead-letter topics with bounded retry on every Kafka listener</li>
-          <li>Redis cache-aside with eviction-on-write for order status reads</li>
-          <li>Concurrency stress test with a real, published result (50 threads / 10 stock)</li>
-          <li>k6 load test with a real, published result (8487 requests, 0 failed, all thresholds passed)</li>
-          <li>Single-instance AWS EC2 deployment, exercised end-to-end</li>
-        </ul>
-      </div>
-      <div class="honesty-col">
-        <h3 class="honesty-col-title honesty-gap">Known limitations / roadmap</h3>
-        <ul class="honesty-list">
-          <li><strong>Choreography, not orchestration</strong> — failure-path logic is distributed across each service's
-          consumers rather than driven by a central saga coordinator. Both are valid patterns; this project deliberately
-          demonstrates the choreography approach.</li>
-          <li><strong>No outbox pattern</strong> — the status-transition-then-publish sequence in the rollback path isn't atomic;
-          a crash between the two can strand an order mid-rollback (see <a href="#failures">Failures</a>).</li>
-          <li><strong>Single-node Redis lock</strong> — not Redlock across multiple nodes; acceptable for this project's scope, not
-          for a system handling real money at scale.</li>
-          <li><strong>No distributed tracing</strong> — no correlation IDs propagated across services; logs live independently per
-          service, making a full saga hard to trace by hand across three log files.</li>
-          <li><strong>Terraform IaC removed</strong> — a managed-services AWS deployment path existed earlier but isn't part of
-          the current repository.</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============ STACK / FOOTER ============ -->
-<section class="section" id="stack">
-  <div class="container">
-    <div class="section-head reveal">
-      <span class="kicker">Tech stack</span>
-      <h2>Built with</h2>
-    </div>
-    <div class="stack-pills reveal">
-      <span class="pill">Java 17</span>
-      <span class="pill">Spring Boot 3.3</span>
-      <span class="pill">Spring Kafka</span>
-      <span class="pill">Spring Data JPA</span>
-      <span class="pill">PostgreSQL</span>
-      <span class="pill">Redis</span>
-      <span class="pill">Apache Kafka</span>
-      <span class="pill">Docker &amp; Docker Compose</span>
-      <span class="pill">JUnit 5</span>
-      <span class="pill">k6</span>
-      <span class="pill">AWS EC2</span>
-    </div>
-  </div>
-</section>
-
+  </section>
 </main>
 
-<footer class="site-footer">
-  <div class="container footer-inner">
-    <p>Team project by Harsh Kokcha and Akshit Gupta. This page is a documentation artifact generated from the repository's actual source — see the
-      <a href="https://github.com/akshit9162/Distributed-Order-System" target="_blank" rel="noopener">GitHub repository</a> for the code itself.</p>
-    <a href="#hero" class="back-to-top">Back to top ↑</a>
+<footer class="foot">
+  <div class="container">
+    <p>Team project by Harsh Kokcha and Akshit Gupta. Akshit added the auction service, its hand-off to orders and the shared order-creation code.</p>
+    <a href="https://github.com/akshit9162/Distributed-Order-System">Source on GitHub</a>
   </div>
 </footer>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="script.js"></script>
 </body>
 </html>

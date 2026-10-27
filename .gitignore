@@ -4,4 +4,5 @@ target/
 *.iml
 .vscode/
 node_modules/
-.env
+.env.impeccable/
+.hallmark/
